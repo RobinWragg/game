@@ -1,5 +1,7 @@
 use raylib::prelude::*;
 
+const GRID_SIZE: i32 = 64;
+
 fn print_grid(grid: &Vec<Vec<i32>>) {
     for row in grid.iter() {
         for cell in row.iter() {
@@ -9,58 +11,52 @@ fn print_grid(grid: &Vec<Vec<i32>>) {
     }
 }
 
-fn update_grid(grid: &mut Vec<Vec<i32>>) {
-    fn cut_in_half(src_pressure: &mut i32) -> i32 {
-        let half = (*src_pressure as f32) / 2.0;
-        let new_src_pressure = f32::floor(half) as i32;
-        let outgoing_pressure = f32::ceil(half) as i32;
-        assert!(new_src_pressure + outgoing_pressure == *src_pressure);
-        outgoing_pressure
-    }
+fn update_grid(grid: &mut Vec<Vec<i32>>, iteration: usize) {
+    let mut changes = vec![vec![0; GRID_SIZE as usize]; GRID_SIZE as usize];
 
-    TODO: create a new array that will contain the changes
+    let directions = vec![
+        (1i32, 0i32),
+        (1, 1),
+        (0, 1),
+        (-1, 1),
+        (-1, 0),
+        (-1, -1),
+        (0, -1),
+        (1, -1),
+    ];
+
+    let weights = vec![3, 2, 3, 2, 3, 2, 3, 2];
+
+    let direction = directions[iteration];
+    let weight = weights[iteration];
 
     for x in 1..grid.len() - 1 {
         for y in 1..grid[x].len() - 1 {
-            let mut this = grid[x][y];
-            let mut adj_indices = vec![];
-
-            adj_indices.push((x + 1, y));
-            adj_indices.push((x - 1, y));
-            adj_indices.push((x, y + 1));
-            adj_indices.push((x, y - 1));
-            // adj_indices.push((x + 1, y - 1));
-            // adj_indices.push((x - 1, y + 1));
-            // adj_indices.push((x - 1, y - 1));
-            // adj_indices.push((x + 1, y + 1));
-
-            let mut low_pressure_adj_indices = vec![];
-            for (x, y) in adj_indices {
-                let adj = grid[x][y];
-                if this > adj {
-                    low_pressure_adj_indices.push((x, y));
-                }
+            if grid[x][y] < weight {
+                // TODO: set to 0?
+                continue;
             }
 
-            if low_pressure_adj_indices.len() != 0 {
-                this -= low_pressure_adj_indices.len() as i32;
-                if this < 0 {
-                    this = 0;
-                }
-                for (x, y) in low_pressure_adj_indices {
-                    grid[x][y] += 1;
-                    if grid[x][y] > 255 {
-                        grid[x][y] = 255;
-                    }
-                }
-
-                grid[x][y] = this;
-                // should_break = true;
-                // break;
+            let x32 = x as i32;
+            let y32 = y as i32;
+            if grid[(x32 + direction.0) as usize][(y32 + direction.1) as usize] < grid[x][y] {
+                // println!(
+                //     "transferring from {} {} to {} {}",
+                //     x,
+                //     y,
+                //     x32 + direction.0,
+                //     y32 + direction.1,
+                // );
+                changes[x][y] -= weight;
+                changes[(x32 + direction.0) as usize][(y32 + direction.1) as usize] += weight;
             }
-            // if should_break {
-            //     break;
-            // }
+        }
+    }
+
+    for x in 1..grid.len() - 1 {
+        for y in 1..grid[x].len() - 1 {
+            grid[x][y] += changes[x][y];
+            grid[x][y] = grid[x][y].clamp(0, 255);
         }
     }
 }
@@ -68,21 +64,22 @@ fn update_grid(grid: &mut Vec<Vec<i32>>) {
 fn main() {
     println!("Hello, world!");
 
-    const GRID_SIZE: i32 = 16;
-
     let mut grid = vec![vec![0; GRID_SIZE as usize]; GRID_SIZE as usize];
     for column in grid.iter_mut() {
         for y in column {
             *y = 0;
         }
     }
-    grid[4][4] = 10;
+    grid[(GRID_SIZE / 2) as usize][(GRID_SIZE / 2) as usize] = 255;
 
     // print_grid(&grid);
 
     let (mut rl, thread) = raylib::init().size(800, 600).title("game").build();
 
-    const VOX_SIZE: i32 = 30;
+    // update_grid(&mut grid);
+    // update_grid(&mut grid);
+
+    const VOX_SIZE: i32 = 8;
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&thread);
 
@@ -90,13 +87,15 @@ fn main() {
         // d.draw_text("Hello, world!", 12, 12, 20, Color::WHITE);
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
-                let v = (grid[x as usize][y as usize] as u32 * 80) as u8;
+                let v = (grid[x as usize][y as usize] * 40).clamp(0, 255) as u8;
                 let c = Color::new(v, v, v, v);
                 d.draw_rectangle(x * VOX_SIZE, y * VOX_SIZE, VOX_SIZE, VOX_SIZE, c);
             }
         }
 
-        update_grid(&mut grid);
+        for i in 0..8 {
+            update_grid(&mut grid, i);
+        }
 
         // Sleep a bit
         std::thread::sleep(std::time::Duration::from_millis(100));
