@@ -1,3 +1,4 @@
+use rand::prelude::*;
 use raylib::prelude::*;
 
 const GRID_SIZE: i32 = 64;
@@ -56,7 +57,7 @@ fn update_grid(grid: &mut Vec<Vec<i32>>, iteration: usize) {
     for x in 1..grid.len() - 1 {
         for y in 1..grid[x].len() - 1 {
             grid[x][y] += changes[x][y];
-            grid[x][y] = grid[x][y].clamp(0, 255);
+            grid[x][y] = grid[x][y].clamp(0, 100000);
         }
     }
 }
@@ -70,16 +71,16 @@ fn main() {
             *y = 0;
         }
     }
-    grid[(GRID_SIZE / 2) as usize][(GRID_SIZE / 2) as usize] = 255;
+    grid[(GRID_SIZE / 2) as usize][(GRID_SIZE / 2) as usize] = 10000;
 
     // print_grid(&grid);
 
-    let (mut rl, thread) = raylib::init().size(800, 600).title("game").build();
+    let (mut rl, thread) = raylib::init().size(1200, 800).title("game").build();
 
     // update_grid(&mut grid);
     // update_grid(&mut grid);
-
-    const VOX_SIZE: i32 = 8;
+    let mut seeds = vec![0, 1, 2, 3, 4, 5, 6, 7];
+    const VOX_SIZE: i32 = 12;
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&thread);
 
@@ -87,17 +88,18 @@ fn main() {
         // d.draw_text("Hello, world!", 12, 12, 20, Color::WHITE);
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
-                let v = (grid[x as usize][y as usize] * 40).clamp(0, 255) as u8;
+                let v = (grid[x as usize][y as usize] * 30).clamp(0, 255) as u8;
                 let c = Color::new(v, v, v, v);
                 d.draw_rectangle(x * VOX_SIZE, y * VOX_SIZE, VOX_SIZE, VOX_SIZE, c);
             }
         }
 
-        for i in 0..8 {
-            update_grid(&mut grid, i);
+        seeds.shuffle(&mut thread_rng());
+        for i in &seeds {
+            update_grid(&mut grid, *i);
         }
 
         // Sleep a bit
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(16));
     }
 }
