@@ -106,9 +106,11 @@ fn main() {
     }
     grid[(GRID_SIZE / 2) as usize][(GRID_SIZE / 2) as usize] = 10000;
 
-    // print_grid(&grid);
-
-    let (mut rl, thread) = raylib::init().size(1200, 800).title("game").build();
+    let (mut rl, thread) = raylib::init()
+        .log_level(TraceLogLevel::LOG_WARNING)
+        .size(1200, 800)
+        .title("game")
+        .build();
 
     // update_grid(&mut grid);
     // update_grid(&mut grid);
