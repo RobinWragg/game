@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytemuck = "1.17.0"
+egui = "0.28.1"
+glam = "0.29.0"
+pollster = "0.3.0"
 rand = "0.8.5"
-raylib = "5.0.2"
+wgpu = "22.1.0"
+winit = "0.30.5"
