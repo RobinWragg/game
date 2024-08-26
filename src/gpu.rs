@@ -70,11 +70,11 @@ impl<'a> Gpu<'a> {
         .unwrap();
 
         let size = window.inner_size(); // Size in physical pixels
-        let config = surface
+        let mut surface_config = surface
             .get_default_config(&adapter, size.width, size.height)
             .unwrap();
-
-        surface.configure(&device, &config);
+        surface_config.present_mode = wgpu::PresentMode::Fifo;
+        surface.configure(&device, &surface_config);
 
         let matrix_buffer = {
             let desc = wgpu::BufferDescriptor {
@@ -164,7 +164,7 @@ impl<'a> Gpu<'a> {
 
         let pipeline = Self::create_pipeline(
             &device,
-            &config,
+            &surface_config,
             &[&uniforms_bindgroup_layout, &texture_bindgroup_layout],
         );
 
@@ -443,7 +443,7 @@ impl<'a> Gpu<'a> {
             let view = self
                 .surface_texture
                 .as_ref()
-                .expect("did you forget to call gpu.begin_frame()?")
+                .expect("Did you forget to call gpu.begin_frame()?")
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -467,8 +467,6 @@ impl<'a> Gpu<'a> {
             render_pass.set_vertex_buffer(2, self.uv_buffer.slice(..));
             render_pass.set_bind_group(0, &self.uniforms_bindgroup, &[]);
 
-            // This is kind of jank tbh; I'm setting a texture even when I'm not using it.
-            // The alternative is to create more than one pipeline and shader.
             let texture_bindgroup = &self.textures[texture_id].bindgroup;
             render_pass.set_bind_group(1, texture_bindgroup, &[]);
 

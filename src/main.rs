@@ -1,8 +1,9 @@
 mod common_types;
 mod debugger;
+mod game;
 mod gpu;
 
-use debugger::Debugger;
+use game::Game;
 use gpu::Gpu;
 use std::sync::Arc;
 use winit::{
@@ -16,16 +17,18 @@ use winit::{
 const WINDOW_WIDTH: u32 = 800;
 const WINDOW_HEIGHT: u32 = 600;
 
-#[derive(Default)]
+// #[derive(Default)]
 struct App<'a> {
     window: Option<Arc<Window>>,
     gpu: Option<Gpu<'a>>,
-    debugger: Debugger,
+    game: Option<Game>,
 }
 
 impl ApplicationHandler for App<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let size = LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT);
+
+        // TODO: test vsync in fullscreen
 
         let window = Arc::new(
             event_loop
@@ -37,8 +40,9 @@ impl ApplicationHandler for App<'_> {
                 .unwrap(),
         );
 
-        self.gpu = Some(Gpu::new(&window)); // TODO: Figure out how to move this complexity into gpu.rs.
+        self.gpu = Some(Gpu::new(&window));
         self.window = Some(window.clone());
+        self.game = Some(Game::new());
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
@@ -50,11 +54,7 @@ impl ApplicationHandler for App<'_> {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                gpu.begin_frame();
-                self.debugger.render_test(gpu);
-                self.debugger.render(gpu);
-                gpu.finish_frame();
+                self.game.as_mut().unwrap().update_and_render(gpu);
             }
             _ => (),
         }
@@ -64,6 +64,10 @@ impl ApplicationHandler for App<'_> {
 fn main() {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::default();
+    let mut app = App {
+        game: None,
+        window: None,
+        gpu: None,
+    };
     let _ = event_loop.run_app(&mut app);
 }

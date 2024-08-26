@@ -4,6 +4,8 @@ use egui;
 use egui::epaint::{image::ImageData, textures::*};
 use std::collections::HashMap;
 
+// TODO: I'm not clipping the primitives as instructed.
+
 #[derive(Default)]
 pub struct Debugger {
     ctx: egui::Context,
@@ -12,6 +14,11 @@ pub struct Debugger {
 
 impl Debugger {
     pub fn render_test(&mut self, gpu: &mut Gpu) {
+        let texture = *match self.egui_to_gpu_tex_id.get(&0) {
+            Some(t) => t,
+            None => return,
+        };
+
         let mut matrix = Mat4::IDENTITY;
         let positions = vec![
             Vec2::new(0.0, 0.0),
@@ -24,16 +31,12 @@ impl Debugger {
             Vec4::new(1.0, 0.0, 0.0, 1.0),
             Vec4::new(0.0, 0.0, 1.0, 0.0),
         ];
-        let mut texture = 0;
-        if let Some(id) = self.egui_to_gpu_tex_id.get(&0) {
-            texture = *id;
-        }
         gpu.render_triangles(&positions, None, Some((texture, &positions)), matrix);
-        matrix.x_axis.w += 0.2;
+        matrix.w_axis.x += 0.2;
         gpu.render_triangles(&positions, Some(&colors), None, matrix);
-        matrix.x_axis.w += 0.2;
+        matrix.w_axis.x += 0.2;
         gpu.render_triangles(&positions, None, None, matrix);
-        matrix.x_axis.w += 0.2;
+        matrix.w_axis.x += 0.2;
         gpu.render_triangles(
             &positions,
             Some(&colors),
@@ -42,10 +45,13 @@ impl Debugger {
         );
     }
 
-    pub fn render(&mut self, gpu: &mut Gpu) {
+    pub fn render(&mut self, gpu: &mut Gpu, dt: f64) {
         let raw_input = egui::RawInput::default();
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
         let full_output = self.ctx.run(raw_input, |ctx| {
+            egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
+                ui.label(format!("{:.1}ms", dt * 1000.0));
+            });
             egui::Window::new("window!").show(&ctx, |ui| {
                 ui.label("Hello world!");
                 let mut wat = false;
@@ -132,14 +138,15 @@ impl Debugger {
             let gpu_tex_id = *self.egui_to_gpu_tex_id.get(&egui_tex_id).unwrap();
             assert!(gpu_tex_id != 0);
 
-            let scale_x = (full_output.pixels_per_point * 2.0) / gpu.width() as f32; // TODO: Arbitrary.
-            let scale_y = (full_output.pixels_per_point * 2.0) / gpu.height() as f32; // TODO: Arbitrary.
+            let scale_x = (full_output.pixels_per_point * 2.0) / gpu.width() as f32;
+            let scale_y = (full_output.pixels_per_point * 2.0) / gpu.height() as f32;
+            let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
             let scale_matrix = Mat4::from_scale(Vec3::new(scale_x, -scale_y, 1.0));
             gpu.render_triangles(
                 &vert_positions,
                 Some(&vert_colors),
                 Some((gpu_tex_id, &vert_uvs)),
-                scale_matrix,
+                trans_matrix * scale_matrix,
             );
         }
     }

@@ -18,7 +18,7 @@ var<uniform> matrix: mat4x4<f32>;
 @vertex
 fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFrag {
     var out: VertToFrag;
-    out.pos = vec4<f32>(vert.pos.x, vert.pos.y, 0.0, 1.0) * matrix;
+    out.pos = matrix * vec4<f32>(vert.pos.x, vert.pos.y, 0.0, 1.0);
     out.color = vert.color;
     out.uv = vert.uv;
     return out;
