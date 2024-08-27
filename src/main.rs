@@ -11,7 +11,8 @@ use winit::{
     dpi::LogicalSize,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    window::{Window, WindowId},
+    monitor::VideoModeHandle,
+    window::{Fullscreen, Window, WindowId},
 };
 
 const WINDOW_WIDTH: u32 = 800;
@@ -28,14 +29,20 @@ impl ApplicationHandler for App<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let size = LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT);
 
-        // TODO: test vsync in fullscreen
+        let monitor = event_loop.primary_monitor().unwrap();
+        let modes: Vec<VideoModeHandle> = monitor.video_modes().collect();
+
+        // TODO: Choose a sensible video mode for exclusive fullscreen
+        let video_mode = modes[0].clone();
 
         let window = Arc::new(
             event_loop
                 .create_window(
                     Window::default_attributes()
-                        .with_title("game")
-                        .with_inner_size(size),
+                        // .with_fullscreen(Some(Fullscreen::Exclusive(video_mode)))
+                        .with_fullscreen(Some(Fullscreen::Borderless(None)))
+                        // .with_inner_size(size)
+                        .with_title("game"),
                 )
                 .unwrap(),
         );

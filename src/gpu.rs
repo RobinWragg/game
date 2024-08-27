@@ -55,13 +55,34 @@ impl<'a> Gpu<'a> {
                     force_fallback_adapter: false,
                 }))
                 .unwrap();
+            let info = adapter.get_info();
+            println!(
+                "backend: {}\nDriver: {}\nInfo: {}",
+                info.backend, info.driver, info.driver_info
+            );
+            let limits = adapter.limits();
+            println!("2D texture limit: {}", limits.max_texture_dimension_2d);
             (surface, adapter)
         };
+
+        let mut limits = wgpu::Limits::downlevel_defaults();
+        limits.max_texture_dimension_2d = 2048;
+
+        // Increase the texture size limit if it's smaller than the window.
+        while limits.max_texture_dimension_2d < window.inner_size().width
+            || limits.max_texture_dimension_2d < window.inner_size().height
+        {
+            limits.max_texture_dimension_2d *= 2;
+        }
+        println!(
+            "Adjusted 2D texture limit: {}",
+            limits.max_texture_dimension_2d
+        );
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                required_limits: limits,
                 label: None,
                 memory_hints: wgpu::MemoryHints::Performance,
             },
@@ -70,10 +91,10 @@ impl<'a> Gpu<'a> {
         .unwrap();
 
         let size = window.inner_size(); // Size in physical pixels
-        let mut surface_config = surface
+        let surface_config = surface
             .get_default_config(&adapter, size.width, size.height)
             .unwrap();
-        surface_config.present_mode = wgpu::PresentMode::Fifo;
+        debug_assert_eq!(surface_config.present_mode, wgpu::PresentMode::Fifo);
         surface.configure(&device, &surface_config);
 
         let matrix_buffer = {
@@ -190,7 +211,7 @@ impl<'a> Gpu<'a> {
         // handle non-textured meshes.
         let white_texture = gpu.create_texture(1, 1, false);
         gpu.write_monochrome_texture(white_texture, &[255u8; 1]);
-        assert_eq!(white_texture, WHITE_TEXTURE_ID);
+        debug_assert_eq!(white_texture, WHITE_TEXTURE_ID);
 
         gpu
     }
@@ -341,7 +362,7 @@ impl<'a> Gpu<'a> {
 
     pub fn write_monochrome_texture(&self, texture_id: usize, pixels: &[u8]) {
         let texture = &self.textures[texture_id];
-        assert_eq!(
+        debug_assert_eq!(
             pixels.len(),
             (texture.size.width * texture.size.height) as usize,
             "expected 8bit single-channel pixel data"
@@ -360,7 +381,7 @@ impl<'a> Gpu<'a> {
 
     pub fn write_rgba_texture(&self, texture_id: usize, pixel_bytes: &[u8]) {
         let texture = &self.textures[texture_id];
-        assert_eq!(
+        debug_assert_eq!(
             pixel_bytes.len(),
             (texture.size.width * texture.size.height * 4) as usize,
             "expected 8bit RGBA pixel data"

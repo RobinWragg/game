@@ -10,6 +10,7 @@ use std::collections::HashMap;
 pub struct Debugger {
     ctx: egui::Context,
     egui_to_gpu_tex_id: HashMap<u64, usize>,
+    eased_dt: f32, // TODO: show worst frame instead. make it red if bad.
 }
 
 impl Debugger {
@@ -45,12 +46,13 @@ impl Debugger {
         );
     }
 
-    pub fn render(&mut self, gpu: &mut Gpu, dt: f64) {
+    pub fn render(&mut self, gpu: &mut Gpu, dt: f32, tt: f64) {
         let raw_input = egui::RawInput::default();
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
         let full_output = self.ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
-                ui.label(format!("{:.1}ms", dt * 1000.0));
+                self.eased_dt += (dt - self.eased_dt) * 0.1;
+                ui.label(format!("Frame time: {:.1}ms", self.eased_dt * 1000.0));
             });
             egui::Window::new("window!").show(&ctx, |ui| {
                 ui.label("Hello world!");
@@ -95,7 +97,6 @@ impl Debugger {
         }
         assert!(full_output.textures_delta.free.is_empty());
 
-        dbg!(full_output.shapes.len());
         for prim in self
             .ctx
             .tessellate(full_output.shapes, full_output.pixels_per_point)
