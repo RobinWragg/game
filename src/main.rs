@@ -15,8 +15,8 @@ use winit::{
     window::{Fullscreen, Window, WindowId},
 };
 
-const WINDOW_WIDTH: u32 = 800;
-const WINDOW_HEIGHT: u32 = 600;
+const WINDOW_WIDTH: u32 = 1200;
+const WINDOW_HEIGHT: u32 = 675;
 
 // #[derive(Default)]
 struct App<'a> {
@@ -40,8 +40,8 @@ impl ApplicationHandler for App<'_> {
                 .create_window(
                     Window::default_attributes()
                         // .with_fullscreen(Some(Fullscreen::Exclusive(video_mode)))
-                        .with_fullscreen(Some(Fullscreen::Borderless(None)))
-                        // .with_inner_size(size)
+                        // .with_fullscreen(Some(Fullscreen::Borderless(None)))
+                        .with_inner_size(size)
                         .with_title("game"),
                 )
                 .unwrap(),

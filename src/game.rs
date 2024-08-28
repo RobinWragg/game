@@ -34,6 +34,6 @@ impl Game {
 
         self.prev_frame_start_time = Instant::now();
 
-        // std::thread::sleep(std::time::Duration::from_millis(14)); // TODO
+        std::thread::sleep(std::time::Duration::from_millis(1)); // TODO
     }
 }
