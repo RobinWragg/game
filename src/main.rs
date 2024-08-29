@@ -59,7 +59,7 @@ impl ApplicationHandler for App<'_> {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let gpu = self.gpu.as_mut().unwrap();
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => event_loop.exit(), // TODO: call this when doing cmd+Q etc
             WindowEvent::RedrawRequested => {
                 self.game.as_mut().unwrap().update_and_render(gpu);
             }

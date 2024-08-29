@@ -2,7 +2,6 @@ use crate::common_types::*;
 use crate::gpu::Gpu;
 use egui;
 use egui::epaint::{image::ImageData, textures::*};
-use std::collections::HashMap;
 
 // TODO: I'm not clipping the primitives as instructed.
 

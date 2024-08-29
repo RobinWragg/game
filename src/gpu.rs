@@ -210,7 +210,7 @@ impl<'a> Gpu<'a> {
         // colors get multiplied with white (255u8), allowing the texturing pipeline to
         // handle non-textured meshes.
         let white_texture = gpu.create_texture(1, 1, false);
-        gpu.write_monochrome_texture(white_texture, &[255u8; 1]);
+        gpu.write_rgba_texture(white_texture, &[255u8; 4]);
         debug_assert_eq!(white_texture, WHITE_TEXTURE_ID);
 
         gpu
@@ -384,7 +384,7 @@ impl<'a> Gpu<'a> {
         debug_assert_eq!(
             pixel_bytes.len(),
             (texture.size.width * texture.size.height * 4) as usize,
-            "expected 8bit RGBA pixel data"
+            "expected entire 8bit RGBA pixel data"
         );
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
