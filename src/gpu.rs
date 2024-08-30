@@ -15,16 +15,44 @@ struct Texture {
     bindgroup: wgpu::BindGroup,
 }
 
+struct MatrixBindGroup {
+    buffer: wgpu::Buffer,
+    bindgroup: wgpu::BindGroup,
+}
+
+impl MatrixBindGroup {
+    fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
+        let buffer = {
+            let desc = wgpu::BufferDescriptor {
+                label: None,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                size: std::mem::size_of::<Mat4>() as u64,
+                mapped_at_creation: false,
+            };
+            device.create_buffer(&desc)
+        };
+        let bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+            label: None,
+        });
+
+        Self { buffer, bindgroup }
+    }
+}
+
 pub struct Gpu<'a> {
     surface: wgpu::Surface<'a>,
     surface_texture: Option<wgpu::SurfaceTexture>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
-    uniforms_bindgroup: wgpu::BindGroup,
+    matrix_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    matrix_buffer: wgpu::Buffer,
     vertpos_buffer: wgpu::Buffer,
     vertcolor_buffer: wgpu::Buffer,
     uv_buffer: wgpu::Buffer,
@@ -97,16 +125,6 @@ impl<'a> Gpu<'a> {
         debug_assert_eq!(surface_config.present_mode, wgpu::PresentMode::Fifo);
         surface.configure(&device, &surface_config);
 
-        let matrix_buffer = {
-            let desc = wgpu::BufferDescriptor {
-                label: None,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                size: std::mem::size_of::<Mat4>() as u64,
-                mapped_at_creation: false,
-            };
-            device.create_buffer(&desc)
-        };
-
         let vertpos_buffer = {
             let desc = wgpu::BufferDescriptor {
                 label: None,
@@ -135,7 +153,7 @@ impl<'a> Gpu<'a> {
             device.create_buffer(&desc)
         };
 
-        let uniforms_bindgroup_layout =
+        let matrix_bindgroup_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -149,14 +167,6 @@ impl<'a> Gpu<'a> {
                 }],
                 label: None,
             });
-        let uniforms_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniforms_bindgroup_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: matrix_buffer.as_entire_binding(),
-            }],
-            label: None,
-        });
 
         let texture_bindgroup_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -186,7 +196,7 @@ impl<'a> Gpu<'a> {
         let pipeline = Self::create_pipeline(
             &device,
             &surface_config,
-            &[&uniforms_bindgroup_layout, &texture_bindgroup_layout],
+            &[&matrix_bindgroup_layout, &texture_bindgroup_layout],
         );
 
         let mut gpu = Self {
@@ -197,9 +207,8 @@ impl<'a> Gpu<'a> {
             device,
             queue,
             pipeline,
-            uniforms_bindgroup,
+            matrix_bindgroup_layout,
             texture_bindgroup_layout,
-            matrix_buffer,
             vertpos_buffer,
             vertcolor_buffer,
             uv_buffer,
@@ -450,12 +459,12 @@ impl<'a> Gpu<'a> {
         };
 
         // Write the matrix to its wgpu buffer
-        {
-            let matrix_floats = matrix.to_cols_array();
-            let matrix_bytes = bytemuck::bytes_of(&matrix_floats);
-            self.queue
-                .write_buffer(&self.matrix_buffer, 0, matrix_bytes);
-        }
+        // TODO: Re-use these bindgroups
+        let matrix_bindgroup = MatrixBindGroup::new(&self.device, &self.matrix_bindgroup_layout);
+        let matrix_floats = matrix.to_cols_array();
+        let matrix_bytes = bytemuck::bytes_of(&matrix_floats);
+        self.queue
+            .write_buffer(&matrix_bindgroup.buffer, 0, matrix_bytes);
 
         let mut encoder = self
             .device
@@ -486,7 +495,7 @@ impl<'a> Gpu<'a> {
             render_pass.set_vertex_buffer(0, self.vertpos_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.vertcolor_buffer.slice(..));
             render_pass.set_vertex_buffer(2, self.uv_buffer.slice(..));
-            render_pass.set_bind_group(0, &self.uniforms_bindgroup, &[]);
+            render_pass.set_bind_group(0, &matrix_bindgroup.bindgroup, &[]);
 
             let texture_bindgroup = &self.textures[texture_id].bindgroup;
             render_pass.set_bind_group(1, texture_bindgroup, &[]);
