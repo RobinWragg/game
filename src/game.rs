@@ -51,12 +51,8 @@ impl Game {
 
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {
         let frame_start_time = Instant::now();
-        let delta_time =
-            (frame_start_time - self.prev_frame_start_time).as_micros() as f32 / 1000000.0; // TODO: as_secs_f32()
-        let total_time = frame_start_time
-            .duration_since(self.launch_time)
-            .as_micros() as f64
-            / 1000000.0;
+        let delta_time = (frame_start_time - self.prev_frame_start_time).as_secs_f32();
+        let total_time = (frame_start_time - self.launch_time).as_secs_f64();
 
         gpu.begin_frame();
         // grid::update_with_2x2_equilibrium(&mut self.grid);
