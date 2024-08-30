@@ -2,6 +2,7 @@ use crate::common_types::*;
 use crate::gpu::Gpu;
 use egui;
 use egui::epaint::{image::ImageData, textures::*};
+use std::time::Instant;
 
 // TODO: I'm not clipping the primitives as instructed.
 
@@ -9,7 +10,6 @@ use egui::epaint::{image::ImageData, textures::*};
 pub struct Debugger {
     ctx: egui::Context,
     egui_to_gpu_tex_id: HashMap<u64, usize>,
-    eased_dt: f32, // TODO: show worst frame instead. make it red if bad.
 }
 
 impl Debugger {
@@ -45,13 +45,17 @@ impl Debugger {
         );
     }
 
-    pub fn render(&mut self, gpu: &mut Gpu, dt: f32, tt: f64) {
+    pub fn render(&mut self, gpu: &mut Gpu, frame_start_time: &Instant) {
+        let rwtodo_time = Instant::now();
         let raw_input = egui::RawInput::default();
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
         let full_output = self.ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
-                self.eased_dt += (dt - self.eased_dt) * 0.1;
-                ui.label(format!("Frame time: {:.1}ms", self.eased_dt * 1000.0));
+                let processing_time = (rwtodo_time - *frame_start_time).as_secs_f32();
+                ui.label(format!(
+                    "Processing time: {:.1}ms",
+                    processing_time * 1000.0
+                ));
             });
             egui::Window::new("window!").show(&ctx, |ui| {
                 ui.label("Hello world!");
