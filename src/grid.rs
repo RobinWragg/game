@@ -1,15 +1,12 @@
-/*
 use std::f32::consts::SQRT_2;
 
-use crate::GuiDefaultProperty::*;
 use rand::prelude::*;
-use raylib::prelude::*;
 use std::ffi::{CStr, CString};
 
-const GRID_SIZE: i32 = 64;
+pub const GRID_SIZE: i32 = 64; // TODO 64
 
 // This also works with i32, but the /4 causes small losses. Not a problem in a vaccuum where we expect losses, but doesn't model an airtight space well.
-fn update_with_2x2_equilibrium(grid: &mut Vec<Vec<f32>>) {
+pub fn update_with_2x2_equilibrium(grid: &mut Vec<Vec<f32>>) {
     debug_assert!(GRID_SIZE % 2 == 0);
 
     fn reach_local_equilibrium(grid: &mut Vec<Vec<f32>>, x: usize, y: usize) {
@@ -94,59 +91,3 @@ fn update_with_shuffle23(grid: &mut Vec<Vec<f32>>) {
         iterate(grid, *i);
     }
 }
-
-fn checkbox(handle: &mut RaylibDrawHandle, label: &str, state: &mut bool) {
-    let rect = raylib::math::Rectangle::new(10.0, 10.0, 20.0, 20.0);
-    let c = CString::new(label).unwrap();
-    let c2: &CStr = &c;
-    handle.gui_check_box(rect, Some(c2), state);
-}
-
-fn main() {
-    println!("Hello, world!");
-
-    let mut grid = vec![vec![0.0f32; GRID_SIZE as usize]; GRID_SIZE as usize];
-    for column in grid.iter_mut() {
-        for y in column {
-            *y = 0.0;
-        }
-    }
-    grid[(GRID_SIZE / 2) as usize][(GRID_SIZE / 2) as usize] = 10000.0;
-
-    let (mut rl, thread) = raylib::init()
-        .log_level(TraceLogLevel::LOG_WARNING)
-        .size(1200, 800)
-        .title("game")
-        .build();
-    rl.gui_set_style(GuiControl::DEFAULT, TEXT_SIZE as i32, 20);
-
-    // update_grid(&mut grid);
-    // update_grid(&mut grid);
-    const VOX_SIZE: i32 = 12;
-    let mut should_play = false;
-    while !rl.window_should_close() {
-        let mut d = rl.begin_drawing(&thread);
-
-        d.clear_background(Color::BLACK);
-        // d.draw_text("Hello, world!", 12, 12, 20, Color::WHITE);
-
-        checkbox(&mut d, "sup", &mut should_play);
-
-        for x in 0..GRID_SIZE {
-            for y in 0..GRID_SIZE {
-                let v = (grid[x as usize][y as usize] * 50.0).clamp(0.0, 255.0) as u8;
-                let c = Color::new(v, v, v, v);
-                d.draw_rectangle(x * VOX_SIZE, y * VOX_SIZE, VOX_SIZE, VOX_SIZE, c);
-            }
-        }
-
-        if should_play {
-            // update_with_shuffle23(&mut grid);
-            update_with_2x2_equilibrium(&mut grid);
-        }
-
-        // Sleep a bit
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-}
- */

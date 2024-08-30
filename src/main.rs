@@ -2,6 +2,7 @@ mod common_types;
 mod debugger;
 mod game;
 mod gpu;
+mod grid;
 
 use game::Game;
 use gpu::Gpu;
