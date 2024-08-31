@@ -2,7 +2,7 @@ use crate::common_types::*;
 use crate::gpu::{Gpu, Mesh};
 use egui;
 use egui::epaint::{image::ImageData, textures::*};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // TODO: I'm not clipping the primitives as instructed.
 
@@ -10,49 +10,59 @@ use std::time::Instant;
 pub struct Debugger {
     ctx: egui::Context,
     egui_to_gpu_tex_id: HashMap<u64, usize>,
+    mesh: Option<Mesh>,
 }
 
 impl Debugger {
     pub fn render_test(&mut self, gpu: &mut Gpu) {
+        let mesh = match self.mesh.as_mut() {
+            Some(m) => m,
+            None => {
+                let positions = vec![
+                    Vec2::new(0.0, 0.0),
+                    Vec2::new(1.0, 0.0),
+                    Vec2::new(0.0, 1.0),
+                ];
+
+                let colors = vec![
+                    Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    Vec4::new(1.0, 0.0, 0.0, 1.0),
+                    Vec4::new(0.0, 0.0, 1.0, 0.0),
+                ];
+                let mut mesh = Mesh::new(positions.len(), gpu);
+                mesh.write_vertices(&positions, Some(&colors), Some(&positions), gpu);
+                self.mesh = Some(mesh);
+                self.mesh.as_mut().unwrap()
+            }
+        };
+
         // TODO: don't use the egui texture for the render test. use an independent one.
         let texture = *match self.egui_to_gpu_tex_id.get(&0) {
             Some(t) => t,
             None => return,
         };
 
-        let mut matrix = Mat4::IDENTITY;
-        let positions = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(0.0, 1.0),
-        ];
-
-        let colors = vec![
-            Vec4::new(0.0, 1.0, 0.0, 1.0),
-            Vec4::new(1.0, 0.0, 0.0, 1.0),
-            Vec4::new(0.0, 0.0, 1.0, 0.0),
-        ];
-        // gpu.render_mesh(&positions, None, Some((texture, &positions)), matrix);
-        // matrix.w_axis.x += 0.2;
-        // gpu.render_mesh(&positions, Some(&colors), None, matrix);
-        // matrix.w_axis.x += 0.2;
-        // gpu.render_mesh(&positions, None, None, matrix);
-        // matrix.w_axis.x += 0.2;
-        let mut mesh = Mesh::new(positions.len(), gpu);
-        mesh.write_vertices(&positions, Some(&colors), Some(&positions), gpu);
+        let matrix = Mat4::IDENTITY;
         gpu.render_mesh(&mesh, Some(texture), &matrix);
     }
 
-    pub fn render(&mut self, gpu: &mut Gpu, frame_start_time: &Instant) {
-        let rwtodo_time = Instant::now();
+    pub fn render(
+        &mut self,
+        gpu: &mut Gpu,
+        update_duration: &Duration,
+        render_duration: &Duration,
+    ) {
         let raw_input = egui::RawInput::default();
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
         let full_output = self.ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
-                let processing_time = (rwtodo_time - *frame_start_time).as_secs_f32();
                 ui.label(format!(
-                    "Processing time: {:.1}ms",
-                    processing_time * 1000.0
+                    "Update: {:.1}ms",
+                    update_duration.as_secs_f32() * 1000.0
+                ));
+                ui.label(format!(
+                    "Render: {:.1}ms",
+                    render_duration.as_secs_f32() * 1000.0
                 ));
             });
             egui::Window::new("window!").show(&ctx, |ui| {

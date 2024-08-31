@@ -56,11 +56,16 @@ impl Game {
         let delta_time = (frame_start_time - self.prev_frame_start_time).as_secs_f32();
         let total_time = (frame_start_time - self.launch_time).as_secs_f64();
 
-        gpu.begin_frame();
         // grid::update_with_2x2_equilibrium(&mut self.grid);
+        let update_duration = Instant::now() - frame_start_time;
+
+        gpu.begin_frame();
+        let render_start_time = Instant::now();
         // self.render_grid(gpu);
         self.debugger.render_test(gpu);
-        self.debugger.render(gpu, &frame_start_time);
+        let render_duration = Instant::now() - render_start_time;
+        self.debugger
+            .render(gpu, &update_duration, &render_duration);
         gpu.finish_frame();
 
         // std::thread::sleep(std::time::Duration::from_millis(1)); // TODO
