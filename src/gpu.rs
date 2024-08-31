@@ -31,6 +31,7 @@ impl MatrixBindGroup {
             };
             device.create_buffer(&desc)
         };
+
         let bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &layout,
             entries: &[wgpu::BindGroupEntry {
@@ -42,6 +43,12 @@ impl MatrixBindGroup {
 
         Self { buffer, bindgroup }
     }
+}
+
+struct Mesh {
+    positions_buffer: wgpu::Buffer,
+    uvs_buffer: wgpu::Buffer,
+    colors_buffer: wgpu::Buffer,
 }
 
 pub struct Gpu<'a> {
@@ -58,6 +65,9 @@ pub struct Gpu<'a> {
     uv_buffer: wgpu::Buffer,
     width: usize,
     height: usize,
+    render_count: u32,
+    matrices: Vec<MatrixBindGroup>,
+    last_used_matrix: usize,
 }
 
 impl<'a> Gpu<'a> {
@@ -199,6 +209,12 @@ impl<'a> Gpu<'a> {
             &[&matrix_bindgroup_layout, &texture_bindgroup_layout],
         );
 
+        let mut matrices = vec![];
+        for i in 0..32 {
+            let m = MatrixBindGroup::new(&device, &matrix_bindgroup_layout);
+            matrices.push(m);
+        }
+
         let mut gpu = Self {
             width: window.inner_size().width as usize,
             height: window.inner_size().height as usize,
@@ -213,6 +229,9 @@ impl<'a> Gpu<'a> {
             vertcolor_buffer,
             uv_buffer,
             textures: vec![],
+            render_count: 0,
+            matrices,
+            last_used_matrix: 0,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -361,12 +380,13 @@ impl<'a> Gpu<'a> {
 
     pub fn begin_frame(&mut self) {
         self.surface_texture = Some(self.surface.get_current_texture().unwrap());
-        // rwtodo: clear.
+        self.render_count = 0;
     }
 
     pub fn finish_frame(&mut self) {
         let surface_texture = std::mem::replace(&mut self.surface_texture, None);
         surface_texture.unwrap().present();
+        dbg!(self.render_count);
     }
 
     pub fn write_monochrome_texture(&self, texture_id: usize, pixels: &[u8]) {
@@ -433,7 +453,7 @@ impl<'a> Gpu<'a> {
     }
 
     pub fn render_triangles(
-        &self,
+        &mut self,
         verts: &[Vec2],
         colors: Option<&[Vec4]>,
         texture_id_and_uvs: Option<(usize, &[Vec2])>,
@@ -459,8 +479,8 @@ impl<'a> Gpu<'a> {
         };
 
         // Write the matrix to its wgpu buffer
-        // TODO: Re-use these bindgroups
-        let matrix_bindgroup = MatrixBindGroup::new(&self.device, &self.matrix_bindgroup_layout);
+        self.last_used_matrix = (self.last_used_matrix + 1) % self.matrices.len();
+        let matrix_bindgroup = &self.matrices[self.last_used_matrix];
         let matrix_floats = matrix.to_cols_array();
         let matrix_bytes = bytemuck::bytes_of(&matrix_floats);
         self.queue
@@ -501,6 +521,7 @@ impl<'a> Gpu<'a> {
             render_pass.set_bind_group(1, texture_bindgroup, &[]);
 
             render_pass.draw(0..verts.len() as u32, 0..1);
+            self.render_count += 1;
         } // We're dropping render_pass here to unborrow the encoder.
 
         self.queue.submit(std::iter::once(encoder.finish()));
