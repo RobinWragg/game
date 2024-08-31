@@ -59,10 +59,27 @@ impl ApplicationHandler for App<'_> {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let gpu = self.gpu.as_mut().unwrap();
+        let game = self.game.as_mut().unwrap();
         match event {
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position,
+            } => {
+                let size = {
+                    let size = self.window.as_ref().unwrap().inner_size();
+                    Vec2::new(size.width as f32, size.height as f32)
+                };
+                let mut position = Vec2::new(position.x as f32, position.y as f32);
+
+                // Convert to NDC
+                position /= size * 0.5;
+                position -= 1.0;
+                position.y *= -1.0;
+                // dbg!(position);
+            }
             WindowEvent::CloseRequested => event_loop.exit(), // TODO: call this when doing cmd+Q etc
             WindowEvent::RedrawRequested => {
-                self.game.as_mut().unwrap().update_and_render(gpu);
+                game.update_and_render(gpu);
             }
             _ => (),
         }

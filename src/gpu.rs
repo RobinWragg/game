@@ -49,11 +49,22 @@ pub struct Mesh {
     positions: wgpu::Buffer,
     colors: wgpu::Buffer,
     uvs: wgpu::Buffer,
+    pub texture: usize, // TODO: this pub is smelly.
 }
 
 impl Mesh {
-    // TODO: create and write buffers in one new() call.
-    pub fn new(vert_count: usize, gpu: &Gpu) -> Self {
+    pub fn new(
+        positions: &[Vec2],
+        colors: Option<&[Vec4]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
+        gpu: &Gpu,
+    ) -> Self {
+        let mut mesh = Self::allocate(positions.len(), gpu);
+        mesh.write(positions, colors, texture_id_and_uvs, gpu);
+        mesh
+    }
+
+    pub fn allocate(vert_count: usize, gpu: &Gpu) -> Self {
         let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
         let colors = Self::create_vertex_buffer(vert_count * size_of::<[f32; 4]>(), &gpu.device);
         let uvs = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
@@ -63,14 +74,15 @@ impl Mesh {
             positions,
             colors,
             uvs,
+            texture: 0,
         }
     }
 
-    pub fn write_vertices(
+    pub fn write(
         &mut self,
         positions: &[Vec2],
         colors: Option<&[Vec4]>,
-        uvs: Option<&[Vec2]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
         gpu: &Gpu,
     ) {
         debug_assert_eq!(positions.len(), self.vert_count);
@@ -89,9 +101,12 @@ impl Mesh {
             );
         }
 
-        if let Some(uvs) = uvs {
+        if let Some((id, uvs)) = texture_id_and_uvs {
+            self.texture = id;
             debug_assert_eq!(uvs.len(), self.vert_count);
             Self::write_vec2_slice_to_buffer(&self.uvs, uvs, &gpu.queue);
+        } else {
+            self.texture = WHITE_TEXTURE_ID;
         }
     }
 
@@ -253,6 +268,7 @@ impl<'a> Gpu<'a> {
             &[&matrix_bindgroup_layout, &texture_bindgroup_layout],
         );
 
+        // TODO: Do something sensible here instead of just making a static 32 of them.
         let mut matrices = vec![];
         for _ in 0..32 {
             let m = MatrixBindGroup::new(&device, &matrix_bindgroup_layout);
@@ -386,7 +402,6 @@ impl<'a> Gpu<'a> {
         let bindgroup = {
             let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-                // rwtodo: what are the defaults?
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
                 address_mode_v: wgpu::AddressMode::ClampToEdge,
                 address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -473,13 +488,7 @@ impl<'a> Gpu<'a> {
         );
     }
 
-    pub fn render_mesh(&mut self, mesh: &Mesh, texture_id: Option<usize>, matrix: &Mat4) {
-        let texture_id = if let Some(id) = texture_id {
-            id
-        } else {
-            WHITE_TEXTURE_ID
-        };
-
+    pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
         // Write the matrix to its wgpu buffer
         self.last_used_matrix = (self.last_used_matrix + 1) % self.matrices.len();
         let matrix_bindgroup = &self.matrices[self.last_used_matrix];
@@ -519,7 +528,7 @@ impl<'a> Gpu<'a> {
             render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
             render_pass.set_bind_group(0, &matrix_bindgroup.bindgroup, &[]);
 
-            let texture_bindgroup = &self.textures[texture_id].bindgroup;
+            let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
             render_pass.set_bind_group(1, texture_bindgroup, &[]);
 
             render_pass.draw(0..mesh.vert_count as u32, 0..1);
@@ -547,8 +556,7 @@ impl<'a> Gpu<'a> {
             Vec2::new(1.0, 0.0),
         ];
 
-        let mut mesh = Mesh::new(6, &self);
-        mesh.write_vertices(&positions, None, Some(&uvs), &self);
-        self.render_mesh(&mesh, Some(texture_id), matrix);
+        let mesh = Mesh::new(&positions, None, Some((texture_id, &uvs)), &self);
+        self.render_mesh(&mesh, matrix);
     }
 }

@@ -27,21 +27,21 @@ impl Debugger {
                     Vec4::new(1.0, 0.0, 0.0, 1.0),
                     Vec4::new(0.0, 0.0, 1.0, 0.0),
                 ];
-                let mut mesh = Mesh::new(positions.len(), gpu);
-                mesh.write_vertices(&positions, Some(&colors), Some(&positions), gpu);
+                let mesh = Mesh::new(&positions, Some(&colors), Some((0, &positions)), gpu);
                 self.mesh = Some(mesh);
                 self.mesh.as_mut().unwrap()
             }
         };
 
-        // TODO: don't use the egui texture for the render test. use an independent one.
-        let texture = *match self.egui_to_gpu_tex_id.get(&0) {
-            Some(t) => t,
+        // TODO: don't use the egui texture for the render test. use an independent one. It's also pretty hacky to have a pub texture field.
+        match self.egui_to_gpu_tex_id.get(&0) {
+            Some(t) => {
+                mesh.texture = *t;
+            }
             None => return,
         };
 
-        let matrix = Mat4::IDENTITY;
-        gpu.render_mesh(&mesh, Some(texture), &matrix);
+        gpu.render_mesh(&mesh, &Mat4::IDENTITY);
     }
 
     pub fn render(
@@ -52,25 +52,41 @@ impl Debugger {
     ) {
         let raw_input = egui::RawInput::default();
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
+
+        let scale_x = (self.ctx.pixels_per_point() * 2.0) / gpu.width() as f32;
+        let scale_y = (self.ctx.pixels_per_point() * 2.0) / gpu.height() as f32;
+        let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
+        let scale_matrix = Mat4::from_scale(Vec3::new(scale_x, -scale_y, 1.0));
+        let total_matrix = trans_matrix * scale_matrix;
         let full_output = self.ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
-                ui.label(format!(
-                    "Update: {:.1}ms",
-                    update_duration.as_secs_f32() * 1000.0
-                ));
-                ui.label(format!(
-                    "Render: {:.1}ms",
-                    render_duration.as_secs_f32() * 1000.0
-                ));
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                    ui.label(format!(
+                        "Update: {:.1}ms",
+                        update_duration.as_secs_f32() * 1000.0
+                    ));
+                    let mut checked = false;
+                    ui.checkbox(&mut checked, "Update");
+                    ui.checkbox(&mut checked, "Render");
+                    ui.checkbox(&mut checked, "Sup!");
+                    let _ = ui.button("Sup!");
+                    ui.label(format!(
+                        "Render: {:.1}ms",
+                        render_duration.as_secs_f32() * 1000.0
+                    ));
+                });
             });
-            egui::Window::new("window!").show(&ctx, |ui| {
-                ui.label("Hello world!");
-                let mut wat = false;
-                ui.checkbox(&mut wat, "checkbox");
-                let _ = ui.button("button");
-                let mut slider_value = 30.0;
-                ui.add(egui::Slider::new(&mut slider_value, 0.0..=100.0).text("My value"));
-            });
+            let pos = egui::Pos2::new(200.0, 100.0);
+            egui::Window::new("window!")
+                .current_pos(pos)
+                .show(&ctx, |ui| {
+                    ui.label("Hello world!");
+                    let mut wat = false;
+                    ui.checkbox(&mut wat, "checkbox");
+                    let _ = ui.button("button");
+                    let mut slider_value = 30.0;
+                    ui.add(egui::Slider::new(&mut slider_value, 0.0..=100.0).text("My value"));
+                });
         });
 
         if !full_output.textures_delta.set.is_empty() {
@@ -148,16 +164,13 @@ impl Debugger {
             let gpu_tex_id = *self.egui_to_gpu_tex_id.get(&egui_tex_id).unwrap();
             assert!(gpu_tex_id != 0);
 
-            let scale_x = (full_output.pixels_per_point * 2.0) / gpu.width() as f32;
-            let scale_y = (full_output.pixels_per_point * 2.0) / gpu.height() as f32;
-            let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
-            let scale_matrix = Mat4::from_scale(Vec3::new(scale_x, -scale_y, 1.0));
-            // gpu.render_mesh(
-            //     &vert_positions,
-            //     Some(&vert_colors),
-            //     Some((gpu_tex_id, &vert_uvs)),
-            //     trans_matrix * scale_matrix,
-            // );
+            let mesh = Mesh::new(
+                &vert_positions,
+                Some(&vert_colors),
+                Some((gpu_tex_id, &vert_uvs)),
+                gpu,
+            );
+            gpu.render_mesh(&mesh, &total_matrix);
         }
     }
 }
