@@ -1,12 +1,11 @@
 use crate::common_types::*;
 use bytemuck;
 use pollster;
+use std::mem::size_of;
 use std::sync::Arc;
 use wgpu;
 use winit::window::Window;
 
-// TODO: I wonder if I can resize the buffers on the fly.
-const VERTEX_BUFFERS_SIZE: u64 = 30000;
 const WHITE_TEXTURE_ID: usize = 0;
 
 struct Texture {
@@ -26,7 +25,7 @@ impl MatrixBindGroup {
             let desc = wgpu::BufferDescriptor {
                 label: None,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                size: std::mem::size_of::<Mat4>() as u64,
+                size: size_of::<Mat4>() as u64,
                 mapped_at_creation: false,
             };
             device.create_buffer(&desc)
@@ -45,10 +44,86 @@ impl MatrixBindGroup {
     }
 }
 
-struct Mesh {
-    positions_buffer: wgpu::Buffer,
-    uvs_buffer: wgpu::Buffer,
-    colors_buffer: wgpu::Buffer,
+pub struct Mesh {
+    vert_count: usize,
+    positions: wgpu::Buffer,
+    colors: wgpu::Buffer,
+    uvs: wgpu::Buffer,
+}
+
+impl Mesh {
+    // TODO: create and write buffers in one new() call.
+    pub fn new(vert_count: usize, gpu: &Gpu) -> Self {
+        let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
+        let colors = Self::create_vertex_buffer(vert_count * size_of::<[f32; 4]>(), &gpu.device);
+        let uvs = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
+
+        Self {
+            vert_count,
+            positions,
+            colors,
+            uvs,
+        }
+    }
+
+    pub fn write_vertices(
+        &mut self,
+        positions: &[Vec2],
+        colors: Option<&[Vec4]>,
+        uvs: Option<&[Vec2]>,
+        gpu: &Gpu,
+    ) {
+        debug_assert_eq!(positions.len(), self.vert_count);
+        Self::write_vec2_slice_to_buffer(&self.positions, positions, &gpu.queue);
+
+        if let Some(colors) = colors {
+            debug_assert_eq!(colors.len(), self.vert_count);
+            Self::write_vec4_slice_to_buffer(&self.colors, colors, &gpu.queue);
+        } else {
+            // Disable vertex colors by just multiplying the texture with white in the shader.
+            let white = Vec4::new(1.0, 1.0, 1.0, 1.0);
+            Self::write_vec4_slice_to_buffer(
+                &self.colors,
+                &vec![white; positions.len()],
+                &gpu.queue,
+            );
+        }
+
+        if let Some(uvs) = uvs {
+            debug_assert_eq!(uvs.len(), self.vert_count);
+            Self::write_vec2_slice_to_buffer(&self.uvs, uvs, &gpu.queue);
+        }
+    }
+
+    fn create_vertex_buffer(num_bytes: usize, device: &wgpu::Device) -> wgpu::Buffer {
+        let desc = wgpu::BufferDescriptor {
+            label: None,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: num_bytes as u64,
+            mapped_at_creation: false,
+        };
+        device.create_buffer(&desc)
+    }
+
+    fn write_vec2_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec2], queue: &wgpu::Queue) {
+        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
+        for i in 0..slice.len() {
+            let a = slice[i].to_array();
+            floats.extend_from_slice(&a);
+        }
+        let bytes = bytemuck::cast_slice(&floats);
+        queue.write_buffer(buffer, 0, bytes);
+    }
+
+    fn write_vec4_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec4], queue: &wgpu::Queue) {
+        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
+        for i in 0..slice.len() {
+            let a = slice[i].to_array();
+            floats.extend_from_slice(&a);
+        }
+        let bytes = bytemuck::cast_slice(&floats);
+        queue.write_buffer(buffer, 0, bytes);
+    }
 }
 
 pub struct Gpu<'a> {
@@ -60,9 +135,6 @@ pub struct Gpu<'a> {
     matrix_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    vertpos_buffer: wgpu::Buffer,
-    vertcolor_buffer: wgpu::Buffer,
-    uv_buffer: wgpu::Buffer,
     width: usize,
     height: usize,
     render_count: u32,
@@ -135,34 +207,6 @@ impl<'a> Gpu<'a> {
         debug_assert_eq!(surface_config.present_mode, wgpu::PresentMode::Fifo);
         surface.configure(&device, &surface_config);
 
-        let vertpos_buffer = {
-            let desc = wgpu::BufferDescriptor {
-                label: None,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                size: VERTEX_BUFFERS_SIZE,
-                mapped_at_creation: false,
-            };
-            device.create_buffer(&desc)
-        };
-        let vertcolor_buffer = {
-            let desc = wgpu::BufferDescriptor {
-                label: None,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                size: VERTEX_BUFFERS_SIZE,
-                mapped_at_creation: false,
-            };
-            device.create_buffer(&desc)
-        };
-        let uv_buffer = {
-            let desc = wgpu::BufferDescriptor {
-                label: None,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                size: VERTEX_BUFFERS_SIZE,
-                mapped_at_creation: false,
-            };
-            device.create_buffer(&desc)
-        };
-
         let matrix_bindgroup_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -210,7 +254,7 @@ impl<'a> Gpu<'a> {
         );
 
         let mut matrices = vec![];
-        for i in 0..32 {
+        for _ in 0..32 {
             let m = MatrixBindGroup::new(&device, &matrix_bindgroup_layout);
             matrices.push(m);
         }
@@ -225,9 +269,6 @@ impl<'a> Gpu<'a> {
             pipeline,
             matrix_bindgroup_layout,
             texture_bindgroup_layout,
-            vertpos_buffer,
-            vertcolor_buffer,
-            uv_buffer,
             textures: vec![],
             render_count: 0,
             matrices,
@@ -256,7 +297,7 @@ impl<'a> Gpu<'a> {
             push_constant_ranges: &[],
         });
         let vertpos_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+            array_stride: size_of::<[f32; 2]>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
@@ -265,7 +306,7 @@ impl<'a> Gpu<'a> {
             }],
         };
         let vertcolor_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+            array_stride: size_of::<[f32; 4]>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
@@ -274,7 +315,7 @@ impl<'a> Gpu<'a> {
             }],
         };
         let uv_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+            array_stride: size_of::<[f32; 2]>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
@@ -432,50 +473,11 @@ impl<'a> Gpu<'a> {
         );
     }
 
-    fn write_vec2_slice_to_buffer(&self, buffer: &wgpu::Buffer, slice: &[Vec2]) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
-        for i in 0..slice.len() {
-            let a = slice[i].to_array();
-            floats.extend_from_slice(&a);
-        }
-        let bytes = bytemuck::cast_slice(&floats);
-        self.queue.write_buffer(buffer, 0, bytes);
-    }
-
-    fn write_vec4_slice_to_buffer(&self, buffer: &wgpu::Buffer, slice: &[Vec4]) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
-        for i in 0..slice.len() {
-            let a = slice[i].to_array();
-            floats.extend_from_slice(&a);
-        }
-        let bytes = bytemuck::cast_slice(&floats);
-        self.queue.write_buffer(buffer, 0, bytes);
-    }
-
-    pub fn render_triangles(
-        &mut self,
-        verts: &[Vec2],
-        colors: Option<&[Vec4]>,
-        texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        matrix: Mat4,
-    ) {
-        self.write_vec2_slice_to_buffer(&self.vertpos_buffer, verts);
-
-        if let Some(colors) = colors {
-            self.write_vec4_slice_to_buffer(&self.vertcolor_buffer, colors);
+    pub fn render_triangles(&mut self, mesh: &Mesh, texture_id: Option<usize>, matrix: &Mat4) {
+        let texture_id = if let Some(id) = texture_id {
+            id
         } else {
-            // Disable vertex colors by just multiplying the texture with white.
-            let white = Vec4::new(1.0, 1.0, 1.0, 1.0);
-            self.write_vec4_slice_to_buffer(&self.vertcolor_buffer, &vec![white; verts.len()]);
-        }
-
-        let texture_id = match texture_id_and_uvs {
-            Some((id, uvs)) => {
-                self.write_vec2_slice_to_buffer(&self.uv_buffer, uvs);
-                id
-            }
-            // Disable texturing by just multiplying vertex colors with white.
-            None => WHITE_TEXTURE_ID,
+            WHITE_TEXTURE_ID
         };
 
         // Write the matrix to its wgpu buffer
@@ -512,22 +514,22 @@ impl<'a> Gpu<'a> {
             });
 
             render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_vertex_buffer(0, self.vertpos_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.vertcolor_buffer.slice(..));
-            render_pass.set_vertex_buffer(2, self.uv_buffer.slice(..));
+            render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
+            render_pass.set_vertex_buffer(1, mesh.colors.slice(..));
+            render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
             render_pass.set_bind_group(0, &matrix_bindgroup.bindgroup, &[]);
 
             let texture_bindgroup = &self.textures[texture_id].bindgroup;
             render_pass.set_bind_group(1, texture_bindgroup, &[]);
 
-            render_pass.draw(0..verts.len() as u32, 0..1);
+            render_pass.draw(0..mesh.vert_count as u32, 0..1);
             self.render_count += 1;
         } // We're dropping render_pass here to unborrow the encoder.
 
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    pub fn render_textured_quad(&mut self, texture_id: usize, matrix: Mat4) {
+    pub fn render_textured_quad(&mut self, texture_id: usize, matrix: &Mat4) {
         let positions = vec![
             Vec2::new(0.0, 0.0),
             Vec2::new(1.0, 0.0),
@@ -544,6 +546,9 @@ impl<'a> Gpu<'a> {
             Vec2::new(1.0, 1.0),
             Vec2::new(1.0, 0.0),
         ];
-        self.render_triangles(&positions, None, Some((texture_id, &uvs)), matrix);
+
+        let mut mesh = Mesh::new(6, &self);
+        mesh.write_vertices(&positions, None, Some(&uvs), &self);
+        self.render_triangles(&mesh, Some(texture_id), matrix);
     }
 }

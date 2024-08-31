@@ -1,5 +1,5 @@
 use crate::common_types::*;
-use crate::gpu::Gpu;
+use crate::gpu::{Gpu, Mesh};
 use egui;
 use egui::epaint::{image::ImageData, textures::*};
 use std::time::Instant;
@@ -14,6 +14,7 @@ pub struct Debugger {
 
 impl Debugger {
     pub fn render_test(&mut self, gpu: &mut Gpu) {
+        // TODO: don't use the egui texture for the render test. use an independent one.
         let texture = *match self.egui_to_gpu_tex_id.get(&0) {
             Some(t) => t,
             None => return,
@@ -31,18 +32,15 @@ impl Debugger {
             Vec4::new(1.0, 0.0, 0.0, 1.0),
             Vec4::new(0.0, 0.0, 1.0, 0.0),
         ];
-        gpu.render_triangles(&positions, None, Some((texture, &positions)), matrix);
-        matrix.w_axis.x += 0.2;
-        gpu.render_triangles(&positions, Some(&colors), None, matrix);
-        matrix.w_axis.x += 0.2;
-        gpu.render_triangles(&positions, None, None, matrix);
-        matrix.w_axis.x += 0.2;
-        gpu.render_triangles(
-            &positions,
-            Some(&colors),
-            Some((texture, &positions)),
-            matrix,
-        );
+        // gpu.render_triangles(&positions, None, Some((texture, &positions)), matrix);
+        // matrix.w_axis.x += 0.2;
+        // gpu.render_triangles(&positions, Some(&colors), None, matrix);
+        // matrix.w_axis.x += 0.2;
+        // gpu.render_triangles(&positions, None, None, matrix);
+        // matrix.w_axis.x += 0.2;
+        let mut mesh = Mesh::new(positions.len(), gpu);
+        mesh.write_vertices(&positions, Some(&colors), Some(&positions), gpu);
+        gpu.render_triangles(&mesh, Some(texture), &matrix);
     }
 
     pub fn render(&mut self, gpu: &mut Gpu, frame_start_time: &Instant) {
@@ -146,12 +144,12 @@ impl Debugger {
             let scale_y = (full_output.pixels_per_point * 2.0) / gpu.height() as f32;
             let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
             let scale_matrix = Mat4::from_scale(Vec3::new(scale_x, -scale_y, 1.0));
-            gpu.render_triangles(
-                &vert_positions,
-                Some(&vert_colors),
-                Some((gpu_tex_id, &vert_uvs)),
-                trans_matrix * scale_matrix,
-            );
+            // gpu.render_triangles(
+            //     &vert_positions,
+            //     Some(&vert_colors),
+            //     Some((gpu_tex_id, &vert_uvs)),
+            //     trans_matrix * scale_matrix,
+            // );
         }
     }
 }

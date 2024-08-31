@@ -29,6 +29,7 @@ impl Game {
         }
     }
 
+    /*
     fn render_grid(&self, gpu: &mut Gpu) {
         let verts = vec![
             Vec2::new(0.0, 0.0),
@@ -48,6 +49,7 @@ impl Game {
             }
         }
     }
+     */
 
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {
         let frame_start_time = Instant::now();
