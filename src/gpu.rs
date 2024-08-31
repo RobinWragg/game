@@ -473,7 +473,7 @@ impl<'a> Gpu<'a> {
         );
     }
 
-    pub fn render_triangles(&mut self, mesh: &Mesh, texture_id: Option<usize>, matrix: &Mat4) {
+    pub fn render_mesh(&mut self, mesh: &Mesh, texture_id: Option<usize>, matrix: &Mat4) {
         let texture_id = if let Some(id) = texture_id {
             id
         } else {
@@ -549,6 +549,6 @@ impl<'a> Gpu<'a> {
 
         let mut mesh = Mesh::new(6, &self);
         mesh.write_vertices(&positions, None, Some(&uvs), &self);
-        self.render_triangles(&mesh, Some(texture_id), matrix);
+        self.render_mesh(&mesh, Some(texture_id), matrix);
     }
 }
