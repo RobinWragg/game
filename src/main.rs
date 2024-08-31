@@ -1,11 +1,11 @@
-mod common_types;
 mod debugger;
 mod game;
 mod gpu;
 mod grid;
+mod prelude;
 
 use game::Game;
-use gpu::Gpu;
+use prelude::*;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,

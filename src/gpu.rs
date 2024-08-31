@@ -1,4 +1,4 @@
-use crate::common_types::*;
+use crate::prelude::*;
 use bytemuck;
 use pollster;
 use std::mem::size_of;

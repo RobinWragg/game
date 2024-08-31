@@ -1,7 +1,4 @@
-use std::f32::consts::SQRT_2;
-
-use rand::prelude::*;
-use std::ffi::{CStr, CString};
+use crate::prelude::*;
 
 pub const GRID_SIZE: i32 = 64; // TODO 64
 
