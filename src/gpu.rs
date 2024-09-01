@@ -509,15 +509,17 @@ impl<'a> Gpu<'a> {
         self.queue
             .write_buffer(&matrix_bindgroup.buffer, 0, matrix_bytes);
 
-        {
-            let view = self
-                .surface_texture
-                .as_ref()
+        let view = self
+            .surface_texture
+            .as_ref()
+            .unwrap()
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut render_pass =
+            self.command_encoder
+                .as_mut()
                 .unwrap()
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
-            let mut render_pass = self.command_encoder.as_mut().unwrap().begin_render_pass(
-                &wgpu::RenderPassDescriptor {
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
@@ -530,21 +532,19 @@ impl<'a> Gpu<'a> {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
-                },
-            );
+                });
 
-            render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
-            render_pass.set_vertex_buffer(1, mesh.colors.slice(..));
-            render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
-            render_pass.set_bind_group(0, &matrix_bindgroup.bindgroup, &[]);
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
+        render_pass.set_vertex_buffer(1, mesh.colors.slice(..));
+        render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
+        render_pass.set_bind_group(0, &matrix_bindgroup.bindgroup, &[]);
 
-            let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
-            render_pass.set_bind_group(1, texture_bindgroup, &[]);
+        let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
+        render_pass.set_bind_group(1, texture_bindgroup, &[]);
 
-            render_pass.draw(0..mesh.vert_count as u32, 0..1);
-            self.render_count += 1;
-        } // We're dropping render_pass here to unborrow the encoder.
+        render_pass.draw(0..mesh.vert_count as u32, 0..1);
+        self.render_count += 1;
     }
 
     pub fn render_textured_quad(&mut self, texture_id: usize, matrix: &Mat4) {
