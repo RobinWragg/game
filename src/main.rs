@@ -1,8 +1,13 @@
+// TODO: Remove.
+#![allow(unused)]
+#![allow(dead_code)]
+
 mod debugger;
 mod game;
 mod gpu;
 mod grid;
 mod prelude;
+mod user;
 
 use game::Game;
 use prelude::*;
@@ -75,7 +80,7 @@ impl ApplicationHandler for App<'_> {
                 position /= size * 0.5;
                 position -= 1.0;
                 position.y *= -1.0;
-                // dbg!(position);
+                game.user.set_mouse_ndc(&position);
             }
             WindowEvent::CloseRequested => event_loop.exit(), // TODO: call this when doing cmd+Q etc
             WindowEvent::RedrawRequested => {

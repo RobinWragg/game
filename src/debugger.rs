@@ -46,11 +46,11 @@ impl Debugger {
 
     pub fn render(
         &mut self,
+        user: &User,
         gpu: &mut Gpu,
         update_duration: &Duration,
         render_duration: &Duration,
     ) {
-        let raw_input = egui::RawInput::default();
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
         let scale_x = (self.ctx.pixels_per_point() * 2.0) / gpu.width() as f32;
@@ -58,6 +58,16 @@ impl Debugger {
         let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
         let scale_matrix = Mat4::from_scale(Vec3::new(scale_x, -scale_y, 1.0));
         let total_matrix = trans_matrix * scale_matrix;
+
+        let raw_input = {
+            let mut raw_input = egui::RawInput::default();
+            let mouse_egui = user.mouse(&total_matrix.inverse());
+            let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
+            let e = egui::Event::PointerMoved(egui::Pos2::new(mouse_egui.x, mouse_egui.y));
+            raw_input.events.push(e);
+            raw_input
+        };
+
         let full_output = self.ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
@@ -76,17 +86,14 @@ impl Debugger {
                     ));
                 });
             });
-            let pos = egui::Pos2::new(200.0, 100.0);
-            egui::Window::new("window!")
-                .current_pos(pos)
-                .show(&ctx, |ui| {
-                    ui.label("Hello world!");
-                    let mut wat = false;
-                    ui.checkbox(&mut wat, "checkbox");
-                    let _ = ui.button("button");
-                    let mut slider_value = 30.0;
-                    ui.add(egui::Slider::new(&mut slider_value, 0.0..=100.0).text("My value"));
-                });
+            egui::Window::new("window!").show(&ctx, |ui| {
+                ui.label("Hello world!");
+                let mut wat = false;
+                ui.checkbox(&mut wat, "checkbox");
+                let _ = ui.button("button");
+                let mut slider_value = 30.0;
+                ui.add(egui::Slider::new(&mut slider_value, 0.0..=100.0).text("My value"));
+            });
         });
 
         if !full_output.textures_delta.set.is_empty() {

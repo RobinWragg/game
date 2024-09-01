@@ -6,6 +6,7 @@ pub struct Game {
     launch_time: Instant,
     prev_frame_start_time: Instant,
     grid: Vec<Vec<f32>>,
+    pub user: User,
 }
 
 impl Game {
@@ -23,6 +24,7 @@ impl Game {
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
             grid,
+            user: User::default(),
         }
     }
 
@@ -62,7 +64,7 @@ impl Game {
         self.debugger.render_test(gpu);
         let render_duration = Instant::now() - render_start_time;
         self.debugger
-            .render(gpu, &update_duration, &render_duration);
+            .render(&self.user, gpu, &update_duration, &render_duration);
         gpu.finish_frame();
 
         // std::thread::sleep(std::time::Duration::from_millis(1)); // TODO
