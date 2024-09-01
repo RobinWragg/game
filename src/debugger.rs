@@ -53,15 +53,17 @@ impl Debugger {
     ) {
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
-        let scale_x = (self.ctx.pixels_per_point() * 2.0) / gpu.width() as f32;
-        let scale_y = (self.ctx.pixels_per_point() * 2.0) / gpu.height() as f32;
-        let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
-        let scale_matrix = Mat4::from_scale(Vec3::new(scale_x, -scale_y, 1.0));
-        let total_matrix = trans_matrix * scale_matrix;
+        let matrix = {
+            let scale_x = (self.ctx.pixels_per_point() * 2.0) / gpu.width() as f32;
+            let scale_y = (self.ctx.pixels_per_point() * 2.0) / gpu.height() as f32;
+            let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
+            let scale_matrix = Mat4::from_scale(Vec3::new(scale_x, -scale_y, 1.0));
+            trans_matrix * scale_matrix
+        };
 
         let raw_input = {
             let mut raw_input = egui::RawInput::default();
-            let mouse_egui = user.mouse(&total_matrix.inverse());
+            let mouse_egui = user.mouse(&matrix.inverse());
             let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
             let e = egui::Event::PointerMoved(egui::Pos2::new(mouse_egui.x, mouse_egui.y));
             raw_input.events.push(e);
@@ -177,7 +179,7 @@ impl Debugger {
                 Some((gpu_tex_id, &vert_uvs)),
                 gpu,
             );
-            gpu.render_mesh(&mesh, &total_matrix);
+            gpu.render_mesh(&mesh, &matrix);
         }
     }
 }
