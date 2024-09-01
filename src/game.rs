@@ -28,7 +28,6 @@ impl Game {
         }
     }
 
-    /*
     fn render_grid(&self, gpu: &mut Gpu) {
         let verts = vec![
             Vec2::new(0.0, 0.0),
@@ -38,36 +37,33 @@ impl Game {
             Vec2::new(0.9, 0.0),
             Vec2::new(0.9, 0.9),
         ];
+        let mesh = Mesh::new(&verts, None, None, gpu);
 
-        let scale = Mat4::from_scale(Vec3::new(0.1, 0.1, 1.0));
+        let scale = Mat4::from_scale(Vec3::new(0.03, 0.03, 1.0));
         for x in 0..grid::GRID_SIZE {
             for y in 0..grid::GRID_SIZE {
                 let v = (self.grid[x as usize][y as usize] * 50.0).clamp(0.0, 255.0) as u8;
                 let m = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0));
-                gpu.render_triangles(&verts, None, None, scale * m);
+                gpu.render_mesh(&mesh, &(scale * m));
             }
         }
     }
-     */
 
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {
-        // TODO: Since wgpu can block for vsync on get_current_texture(), the frame start time is obtained a full render after the screen refresh. This might be resulting in erratic dt. I should obtain frame start time immediately after screen refresh. Apparently on some systems it blocks for vsync on present(). Fixing this would also mean I could measure processing time properly.
+        gpu.begin_frame();
+
         let frame_start_time = Instant::now();
         let delta_time = (frame_start_time - self.prev_frame_start_time).as_secs_f32();
         let total_time = (frame_start_time - self.launch_time).as_secs_f64();
 
         // grid::update_with_2x2_equilibrium(&mut self.grid);
-        let update_duration = Instant::now() - frame_start_time;
 
-        gpu.begin_frame();
-        let render_start_time = Instant::now();
-        // self.render_grid(gpu);
+        self.render_grid(gpu);
         self.debugger.render_test(gpu);
-        let render_duration = Instant::now() - render_start_time;
+
+        // std::thread::sleep(std::time::Duration::from_millis(100)); // TODO
         self.debugger.render(&self.user, gpu, delta_time);
         gpu.finish_frame();
-
-        // std::thread::sleep(std::time::Duration::from_millis(1)); // TODO
         self.prev_frame_start_time = frame_start_time;
     }
 }

@@ -150,6 +150,7 @@ pub struct Gpu<'a> {
     matrix_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
+    command_encoder: Option<wgpu::CommandEncoder>,
     width: usize,
     height: usize,
     render_count: u32,
@@ -286,6 +287,7 @@ impl<'a> Gpu<'a> {
             matrix_bindgroup_layout,
             texture_bindgroup_layout,
             textures: vec![],
+            command_encoder: None,
             render_count: 0,
             matrices,
             last_used_matrix: 0,
@@ -434,17 +436,6 @@ impl<'a> Gpu<'a> {
         self.textures.len() - 1
     }
 
-    pub fn begin_frame(&mut self) {
-        self.surface_texture = Some(self.surface.get_current_texture().unwrap());
-        self.render_count = 0;
-    }
-
-    pub fn finish_frame(&mut self) {
-        let surface_texture = std::mem::replace(&mut self.surface_texture, None);
-        surface_texture.unwrap().present();
-        dbg!(self.render_count);
-    }
-
     pub fn write_monochrome_texture(&self, texture_id: usize, pixels: &[u8]) {
         let texture = &self.textures[texture_id];
         debug_assert_eq!(
@@ -488,6 +479,27 @@ impl<'a> Gpu<'a> {
         );
     }
 
+    pub fn begin_frame(&mut self) {
+        self.surface_texture = Some(self.surface.get_current_texture().unwrap());
+
+        self.command_encoder = Some(
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor::default()),
+        );
+
+        self.render_count = 0;
+    }
+
+    pub fn finish_frame(&mut self) {
+        let command_encoder = std::mem::replace(&mut self.command_encoder, None);
+        let finished_command_buffer = command_encoder.unwrap().finish();
+        self.queue.submit(std::iter::once(finished_command_buffer));
+
+        let surface_texture = std::mem::replace(&mut self.surface_texture, None);
+        surface_texture.unwrap().present();
+        dbg!(self.render_count);
+    }
+
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
         // Write the matrix to its wgpu buffer
         self.last_used_matrix = (self.last_used_matrix + 1) % self.matrices.len();
@@ -497,30 +509,29 @@ impl<'a> Gpu<'a> {
         self.queue
             .write_buffer(&matrix_bindgroup.buffer, 0, matrix_bytes);
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
             let view = self
                 .surface_texture
                 .as_ref()
-                .expect("Did you forget to call gpu.begin_frame()?")
+                .unwrap()
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+            let mut render_pass = self.command_encoder.as_mut().unwrap().begin_render_pass(
+                &wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                },
+            );
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
@@ -534,8 +545,6 @@ impl<'a> Gpu<'a> {
             render_pass.draw(0..mesh.vert_count as u32, 0..1);
             self.render_count += 1;
         } // We're dropping render_pass here to unborrow the encoder.
-
-        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     pub fn render_textured_quad(&mut self, texture_id: usize, matrix: &Mat4) {

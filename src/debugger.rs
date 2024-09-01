@@ -92,7 +92,7 @@ impl Debugger {
                     }
 
                     let max_dt = Self::max_dt(&self.delta_times);
-                    ui.label(format!("dt: {:.1}ms", max_dt * 1000.0));
+                    ui.label(format!("Worst frame: {:.1}ms", max_dt * 1000.0));
                 });
             });
             egui::Window::new("World").show(&ctx, |ui| {
