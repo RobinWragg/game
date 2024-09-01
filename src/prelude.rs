@@ -6,6 +6,6 @@ pub use glam::{
     Vec2Swizzles, Vec3Swizzles, Vec4Swizzles,
 };
 pub use rand::prelude::*;
-pub use std::collections::{HashMap, HashSet};
+pub use std::collections::{HashMap, HashSet, VecDeque};
 pub use std::f32::consts::SQRT_2;
 pub use std::time::{Duration, Instant};

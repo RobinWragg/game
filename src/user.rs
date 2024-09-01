@@ -3,6 +3,7 @@ use crate::prelude::*;
 #[derive(Default)]
 pub struct User {
     mouse_ndc: Vec2,
+    pub left_button_down: bool,
 }
 
 impl User {

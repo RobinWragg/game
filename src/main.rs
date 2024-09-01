@@ -15,7 +15,7 @@ use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
-    event::WindowEvent,
+    event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     monitor::VideoModeHandle,
     window::{Fullscreen, Window, WindowId},
@@ -81,6 +81,15 @@ impl ApplicationHandler for App<'_> {
                 position -= 1.0;
                 position.y *= -1.0;
                 game.user.set_mouse_ndc(&position);
+            }
+            WindowEvent::MouseInput {
+                device_id: _,
+                state,
+                button,
+            } => {
+                if button == MouseButton::Left {
+                    game.user.left_button_down = state.is_pressed();
+                }
             }
             WindowEvent::CloseRequested => event_loop.exit(), // TODO: call this when doing cmd+Q etc
             WindowEvent::RedrawRequested => {

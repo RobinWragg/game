@@ -51,6 +51,7 @@ impl Game {
      */
 
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {
+        // TODO: Since wgpu can block for vsync on get_current_texture(), the frame start time is obtained a full render after the screen refresh. This might be resulting in erratic dt. I should obtain frame start time immediately after screen refresh. Apparently on some systems it blocks for vsync on present(). Fixing this would also mean I could measure processing time properly.
         let frame_start_time = Instant::now();
         let delta_time = (frame_start_time - self.prev_frame_start_time).as_secs_f32();
         let total_time = (frame_start_time - self.launch_time).as_secs_f64();
@@ -63,8 +64,7 @@ impl Game {
         // self.render_grid(gpu);
         self.debugger.render_test(gpu);
         let render_duration = Instant::now() - render_start_time;
-        self.debugger
-            .render(&self.user, gpu, &update_duration, &render_duration);
+        self.debugger.render(&self.user, gpu, delta_time);
         gpu.finish_frame();
 
         // std::thread::sleep(std::time::Duration::from_millis(1)); // TODO

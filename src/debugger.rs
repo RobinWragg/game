@@ -1,6 +1,6 @@
 use crate::prelude::*;
-use egui;
 use egui::epaint::{image::ImageData, textures::*};
+use egui::{self, Modifiers};
 
 // TODO: I'm not clipping the primitives as instructed.
 
@@ -9,9 +9,23 @@ pub struct Debugger {
     ctx: egui::Context,
     egui_to_gpu_tex_id: HashMap<u64, usize>,
     mesh: Option<Mesh>,
+    delta_times: VecDeque<f32>,
 }
 
 impl Debugger {
+    fn max_dt(delta_times: &VecDeque<f32>) -> f32 {
+        *delta_times
+            .iter()
+            .max_by(|a, b| {
+                if a < b {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            })
+            .unwrap()
+    }
+
     pub fn render_test(&mut self, gpu: &mut Gpu) {
         let mesh = match self.mesh.as_mut() {
             Some(m) => m,
@@ -44,13 +58,7 @@ impl Debugger {
         gpu.render_mesh(&mesh, &Mat4::IDENTITY);
     }
 
-    pub fn render(
-        &mut self,
-        user: &User,
-        gpu: &mut Gpu,
-        update_duration: &Duration,
-        render_duration: &Duration,
-    ) {
+    pub fn render(&mut self, user: &User, gpu: &mut Gpu, dt: f32) {
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
         let matrix = {
@@ -65,36 +73,32 @@ impl Debugger {
             let mut raw_input = egui::RawInput::default();
             let mouse_egui = user.mouse(&matrix.inverse());
             let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
-            let e = egui::Event::PointerMoved(egui::Pos2::new(mouse_egui.x, mouse_egui.y));
-            raw_input.events.push(e);
+            raw_input.events.push(egui::Event::PointerMoved(mouse_egui));
+            raw_input.events.push(egui::Event::PointerButton {
+                pos: mouse_egui,
+                button: egui::PointerButton::Primary,
+                pressed: user.left_button_down,
+                modifiers: egui::Modifiers::default(),
+            });
             raw_input
         };
 
         let full_output = self.ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                    ui.label(format!(
-                        "Update: {:.1}ms",
-                        update_duration.as_secs_f32() * 1000.0
-                    ));
-                    let mut checked = false;
-                    ui.checkbox(&mut checked, "Update");
-                    ui.checkbox(&mut checked, "Render");
-                    ui.checkbox(&mut checked, "Sup!");
-                    let _ = ui.button("Sup!");
-                    ui.label(format!(
-                        "Render: {:.1}ms",
-                        render_duration.as_secs_f32() * 1000.0
-                    ));
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    self.delta_times.push_back(dt);
+                    if self.delta_times.len() > 60 {
+                        self.delta_times.pop_front();
+                    }
+
+                    let max_dt = Self::max_dt(&self.delta_times);
+                    ui.label(format!("dt: {:.1}ms", max_dt * 1000.0));
                 });
             });
-            egui::Window::new("window!").show(&ctx, |ui| {
-                ui.label("Hello world!");
-                let mut wat = false;
-                ui.checkbox(&mut wat, "checkbox");
-                let _ = ui.button("button");
-                let mut slider_value = 30.0;
-                ui.add(egui::Slider::new(&mut slider_value, 0.0..=100.0).text("My value"));
+            egui::Window::new("World").show(&ctx, |ui| {
+                let _ = ui.button("Reset");
+                let mut slider_value = 1.0;
+                ui.add(egui::Slider::new(&mut slider_value, 0.0..=2.0).text("Speed"));
             });
         });
 
