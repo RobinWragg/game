@@ -151,6 +151,7 @@ pub struct Gpu<'a> {
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
     command_encoder: Option<wgpu::CommandEncoder>,
+    render_pass: Option<wgpu::RenderPass<'static>>,
     width: usize,
     height: usize,
     render_count: u32,
@@ -271,7 +272,7 @@ impl<'a> Gpu<'a> {
 
         // TODO: Do something sensible here instead of just making a static 32 of them.
         let mut matrices = vec![];
-        for _ in 0..32 {
+        for _ in 0..4200 {
             let m = MatrixBindGroup::new(&device, &matrix_bindgroup_layout);
             matrices.push(m);
         }
@@ -288,6 +289,7 @@ impl<'a> Gpu<'a> {
             texture_bindgroup_layout,
             textures: vec![],
             command_encoder: None,
+            render_pass: None,
             render_count: 0,
             matrices,
             last_used_matrix: 0,
@@ -487,10 +489,43 @@ impl<'a> Gpu<'a> {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor::default()),
         );
 
+        let view = self
+            .surface_texture
+            .as_ref()
+            .unwrap()
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.render_pass = Some(
+            self.command_encoder
+                .as_mut()
+                .unwrap()
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                })
+                .forget_lifetime(),
+        );
+        self.render_pass
+            .as_mut()
+            .unwrap()
+            .set_pipeline(&self.pipeline);
+
         self.render_count = 0;
     }
 
     pub fn finish_frame(&mut self) {
+        self.render_pass = None;
+
         let command_encoder = std::mem::replace(&mut self.command_encoder, None);
         let finished_command_buffer = command_encoder.unwrap().finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
@@ -509,32 +544,8 @@ impl<'a> Gpu<'a> {
         self.queue
             .write_buffer(&matrix_bindgroup.buffer, 0, matrix_bytes);
 
-        let view = self
-            .surface_texture
-            .as_ref()
-            .unwrap()
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut render_pass =
-            self.command_encoder
-                .as_mut()
-                .unwrap()
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
+        let mut render_pass = self.render_pass.as_mut().unwrap();
 
-        render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.colors.slice(..));
         render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
