@@ -19,6 +19,12 @@ struct MatrixBindGroup {
     bindgroup: wgpu::BindGroup,
 }
 
+struct FrameObjects {
+    surface_texture: wgpu::SurfaceTexture,
+    command_encoder: wgpu::CommandEncoder,
+    render_pass: Option<wgpu::RenderPass<'static>>,
+}
+
 impl MatrixBindGroup {
     fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
         let buffer = {
@@ -143,15 +149,13 @@ impl Mesh {
 
 pub struct Gpu<'a> {
     surface: wgpu::Surface<'a>,
-    surface_texture: Option<wgpu::SurfaceTexture>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
     matrix_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    command_encoder: Option<wgpu::CommandEncoder>,
-    render_pass: Option<wgpu::RenderPass<'static>>,
+    frame_objects: Option<FrameObjects>,
     width: usize,
     height: usize,
     render_count: u32,
@@ -281,15 +285,13 @@ impl<'a> Gpu<'a> {
             width: window.inner_size().width as usize,
             height: window.inner_size().height as usize,
             surface,
-            surface_texture: None,
             device,
             queue,
             pipeline,
             matrix_bindgroup_layout,
             texture_bindgroup_layout,
             textures: vec![],
-            command_encoder: None,
-            render_pass: None,
+            frame_objects: None,
             render_count: 0,
             matrices,
             last_used_matrix: 0,
@@ -482,56 +484,52 @@ impl<'a> Gpu<'a> {
     }
 
     pub fn begin_frame(&mut self) {
-        self.surface_texture = Some(self.surface.get_current_texture().unwrap());
+        let surface_texture = self.surface.get_current_texture().unwrap();
 
-        self.command_encoder = Some(
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor::default()),
-        );
+        let mut command_encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        let view = self
-            .surface_texture
-            .as_ref()
-            .unwrap()
+        let view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        self.render_pass = Some(
-            self.command_encoder
-                .as_mut()
-                .unwrap()
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                })
-                .forget_lifetime(),
-        );
-        self.render_pass
-            .as_mut()
-            .unwrap()
-            .set_pipeline(&self.pipeline);
+
+        let mut render_pass = command_encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            })
+            .forget_lifetime();
+
+        render_pass.set_pipeline(&self.pipeline);
+
+        self.frame_objects = Some(FrameObjects {
+            surface_texture,
+            command_encoder,
+            render_pass: Some(render_pass),
+        });
 
         self.render_count = 0;
     }
 
     pub fn finish_frame(&mut self) {
-        self.render_pass = None;
+        let mut frame_objects = std::mem::replace(&mut self.frame_objects, None).unwrap();
+        frame_objects.render_pass = None; // Finish the render pass
 
-        let command_encoder = std::mem::replace(&mut self.command_encoder, None);
-        let finished_command_buffer = command_encoder.unwrap().finish();
+        let finished_command_buffer = frame_objects.command_encoder.finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
 
-        let surface_texture = std::mem::replace(&mut self.surface_texture, None);
-        surface_texture.unwrap().present();
+        frame_objects.surface_texture.present();
         dbg!(self.render_count);
     }
 
@@ -544,7 +542,13 @@ impl<'a> Gpu<'a> {
         self.queue
             .write_buffer(&matrix_bindgroup.buffer, 0, matrix_bytes);
 
-        let mut render_pass = self.render_pass.as_mut().unwrap();
+        let mut render_pass = self
+            .frame_objects
+            .as_mut()
+            .unwrap()
+            .render_pass
+            .as_mut()
+            .unwrap();
 
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.colors.slice(..));
