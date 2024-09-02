@@ -156,10 +156,11 @@ pub struct Gpu<'a> {
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
     frame_objects: Option<FrameObjects>,
+    busy_matrices: Vec<MatrixBindGroup>,
+    idle_matrices: Vec<MatrixBindGroup>,
     width: usize,
     height: usize,
     render_count: u32,
-    matrices: Vec<MatrixBindGroup>,
     last_used_matrix: usize,
 }
 
@@ -274,13 +275,6 @@ impl<'a> Gpu<'a> {
             &[&matrix_bindgroup_layout, &texture_bindgroup_layout],
         );
 
-        // TODO: Do something sensible here instead of just making a static 32 of them.
-        let mut matrices = vec![];
-        for _ in 0..4200 {
-            let m = MatrixBindGroup::new(&device, &matrix_bindgroup_layout);
-            matrices.push(m);
-        }
-
         let mut gpu = Self {
             width: window.inner_size().width as usize,
             height: window.inner_size().height as usize,
@@ -292,8 +286,9 @@ impl<'a> Gpu<'a> {
             texture_bindgroup_layout,
             textures: vec![],
             frame_objects: None,
+            busy_matrices: vec![],
+            idle_matrices: vec![],
             render_count: 0,
-            matrices,
             last_used_matrix: 0,
         };
 
@@ -523,20 +518,26 @@ impl<'a> Gpu<'a> {
     }
 
     pub fn finish_frame(&mut self) {
-        let mut frame_objects = std::mem::replace(&mut self.frame_objects, None).unwrap();
+        let mut frame_objects = std::mem::take(&mut self.frame_objects).unwrap();
         frame_objects.render_pass = None; // Finish the render pass
 
         let finished_command_buffer = frame_objects.command_encoder.finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
+
+        std::mem::swap(&mut self.idle_matrices, &mut self.busy_matrices);
+        dbg!(self.idle_matrices.len());
 
         frame_objects.surface_texture.present();
         dbg!(self.render_count);
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
+        let matrix_bindgroup = match self.idle_matrices.pop() {
+            Some(m) => m,
+            None => MatrixBindGroup::new(&self.device, &self.matrix_bindgroup_layout),
+        };
+
         // Write the matrix to its wgpu buffer
-        self.last_used_matrix = (self.last_used_matrix + 1) % self.matrices.len();
-        let matrix_bindgroup = &self.matrices[self.last_used_matrix];
         let matrix_floats = matrix.to_cols_array();
         let matrix_bytes = bytemuck::bytes_of(&matrix_floats);
         self.queue
@@ -559,6 +560,8 @@ impl<'a> Gpu<'a> {
         render_pass.set_bind_group(1, texture_bindgroup, &[]);
 
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
+
+        self.busy_matrices.push(matrix_bindgroup);
         self.render_count += 1;
     }
 
