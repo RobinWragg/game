@@ -41,7 +41,7 @@ impl Debugger {
                     Vec4::new(1.0, 0.0, 0.0, 1.0),
                     Vec4::new(0.0, 0.0, 1.0, 0.0),
                 ];
-                let mesh = Mesh::new(&positions, Some(&colors), Some((0, &positions)), gpu);
+                let mesh = Mesh::new(&positions, Some(&colors), Some((0, &positions)), None, gpu);
                 self.mesh = Some(mesh);
                 self.mesh.as_mut().unwrap()
             }
@@ -183,6 +183,7 @@ impl Debugger {
                 &vert_positions,
                 Some(&vert_colors),
                 Some((gpu_tex_id, &vert_uvs)),
+                None,
                 gpu,
             );
             gpu.render_mesh(&mesh, &matrix);

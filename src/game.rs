@@ -37,7 +37,7 @@ impl Game {
             Vec2::new(0.9, 0.0),
             Vec2::new(0.9, 0.9),
         ];
-        let mesh = Mesh::new(&verts, None, None, gpu);
+        let mesh = Mesh::with_color(&verts, Vec4::new(0.0, 1.0, 1.0, 1.0), gpu);
 
         let scale = Mat4::from_scale(Vec3::new(0.03, 0.03, 1.0));
         for x in 0..grid::GRID_SIZE {

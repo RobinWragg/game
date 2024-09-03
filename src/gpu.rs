@@ -20,6 +20,124 @@ struct FrameObjects {
     render_pass: Option<wgpu::RenderPass<'static>>,
 }
 
+pub struct Mesh {
+    vert_count: usize,
+    positions: wgpu::Buffer,
+    vert_colors: wgpu::Buffer,
+    uvs: wgpu::Buffer,
+    pub texture: usize, // TODO: this pub is smelly.
+    uniform_color: Vec4,
+}
+
+impl Mesh {
+    pub fn new(
+        positions: &[Vec2],
+        vert_colors: Option<&[Vec4]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
+        uniform_color: Option<Vec4>,
+        gpu: &Gpu,
+    ) -> Self {
+        let mut mesh = Self::allocate(positions.len(), gpu);
+        mesh.write(
+            positions,
+            vert_colors,
+            texture_id_and_uvs,
+            uniform_color,
+            gpu,
+        );
+        mesh
+    }
+
+    pub fn with_color(positions: &[Vec2], color: Vec4, gpu: &Gpu) -> Self {
+        Self::new(positions, None, None, Some(color), gpu)
+    }
+
+    fn allocate(vert_count: usize, gpu: &Gpu) -> Self {
+        let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
+        let vert_colors =
+            Self::create_vertex_buffer(vert_count * size_of::<[f32; 4]>(), &gpu.device);
+        let uvs = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
+
+        Self {
+            vert_count,
+            positions,
+            vert_colors,
+            uvs,
+            uniform_color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            texture: 0,
+        }
+    }
+
+    fn write(
+        &mut self,
+        positions: &[Vec2],
+        vert_colors: Option<&[Vec4]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
+        uniform_color: Option<Vec4>,
+        gpu: &Gpu,
+    ) {
+        debug_assert_eq!(positions.len(), self.vert_count);
+        Self::write_vec2_slice_to_buffer(&self.positions, positions, &gpu.queue);
+
+        if let Some(colors) = vert_colors {
+            debug_assert_eq!(colors.len(), self.vert_count);
+            Self::write_vec4_slice_to_buffer(&self.vert_colors, colors, &gpu.queue);
+        } else {
+            // Disable vertex colors by just multiplying the texture with white in the shader.
+            let white = Vec4::new(1.0, 1.0, 1.0, 1.0);
+            Self::write_vec4_slice_to_buffer(
+                &self.vert_colors,
+                &vec![white; positions.len()],
+                &gpu.queue,
+            );
+        }
+
+        if let Some((id, uvs)) = texture_id_and_uvs {
+            self.texture = id;
+            debug_assert_eq!(uvs.len(), self.vert_count);
+            Self::write_vec2_slice_to_buffer(&self.uvs, uvs, &gpu.queue);
+        } else {
+            self.texture = WHITE_TEXTURE_ID;
+        }
+
+        if let Some(color) = uniform_color {
+            self.uniform_color = color;
+        } else {
+            self.uniform_color = Vec4::new(1.0, 1.0, 1.0, 1.0);
+        }
+    }
+
+    fn create_vertex_buffer(num_bytes: usize, device: &wgpu::Device) -> wgpu::Buffer {
+        let desc = wgpu::BufferDescriptor {
+            label: None,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: num_bytes as u64,
+            mapped_at_creation: false,
+        };
+        device.create_buffer(&desc)
+    }
+
+    fn write_vec2_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec2], queue: &wgpu::Queue) {
+        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
+        for i in 0..slice.len() {
+            let a = slice[i].to_array();
+            floats.extend_from_slice(&a);
+        }
+        let bytes = bytemuck::cast_slice(&floats);
+        queue.write_buffer(buffer, 0, bytes);
+    }
+
+    fn write_vec4_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec4], queue: &wgpu::Queue) {
+        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
+        for i in 0..slice.len() {
+            let a = slice[i].to_array();
+            floats.extend_from_slice(&a);
+        }
+        let bytes = bytemuck::cast_slice(&floats);
+        queue.write_buffer(buffer, 0, bytes);
+    }
+}
+
 struct Uniform {
     buffer: wgpu::Buffer,
     bindgroup: wgpu::BindGroup,
@@ -63,103 +181,6 @@ impl Uniform {
         uniform_bytes.extend_from_slice(matrix_bytes);
         uniform_bytes.extend_from_slice(color_bytes);
         uniform_bytes
-    }
-}
-
-pub struct Mesh {
-    vert_count: usize,
-    positions: wgpu::Buffer,
-    colors: wgpu::Buffer,
-    uvs: wgpu::Buffer,
-    pub texture: usize, // TODO: this pub is smelly.
-}
-
-impl Mesh {
-    pub fn new(
-        positions: &[Vec2],
-        colors: Option<&[Vec4]>,
-        texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        gpu: &Gpu,
-    ) -> Self {
-        let mut mesh = Self::allocate(positions.len(), gpu);
-        mesh.write(positions, colors, texture_id_and_uvs, gpu);
-        mesh
-    }
-
-    pub fn allocate(vert_count: usize, gpu: &Gpu) -> Self {
-        let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
-        let colors = Self::create_vertex_buffer(vert_count * size_of::<[f32; 4]>(), &gpu.device);
-        let uvs = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
-
-        Self {
-            vert_count,
-            positions,
-            colors,
-            uvs,
-            texture: 0,
-        }
-    }
-
-    pub fn write(
-        &mut self,
-        positions: &[Vec2],
-        colors: Option<&[Vec4]>,
-        texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        gpu: &Gpu,
-    ) {
-        debug_assert_eq!(positions.len(), self.vert_count);
-        Self::write_vec2_slice_to_buffer(&self.positions, positions, &gpu.queue);
-
-        if let Some(colors) = colors {
-            debug_assert_eq!(colors.len(), self.vert_count);
-            Self::write_vec4_slice_to_buffer(&self.colors, colors, &gpu.queue);
-        } else {
-            // Disable vertex colors by just multiplying the texture with white in the shader.
-            let white = Vec4::new(1.0, 1.0, 1.0, 1.0);
-            Self::write_vec4_slice_to_buffer(
-                &self.colors,
-                &vec![white; positions.len()],
-                &gpu.queue,
-            );
-        }
-
-        if let Some((id, uvs)) = texture_id_and_uvs {
-            self.texture = id;
-            debug_assert_eq!(uvs.len(), self.vert_count);
-            Self::write_vec2_slice_to_buffer(&self.uvs, uvs, &gpu.queue);
-        } else {
-            self.texture = WHITE_TEXTURE_ID;
-        }
-    }
-
-    fn create_vertex_buffer(num_bytes: usize, device: &wgpu::Device) -> wgpu::Buffer {
-        let desc = wgpu::BufferDescriptor {
-            label: None,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: num_bytes as u64,
-            mapped_at_creation: false,
-        };
-        device.create_buffer(&desc)
-    }
-
-    fn write_vec2_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec2], queue: &wgpu::Queue) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
-        for i in 0..slice.len() {
-            let a = slice[i].to_array();
-            floats.extend_from_slice(&a);
-        }
-        let bytes = bytemuck::cast_slice(&floats);
-        queue.write_buffer(buffer, 0, bytes);
-    }
-
-    fn write_vec4_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec4], queue: &wgpu::Queue) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
-        for i in 0..slice.len() {
-            let a = slice[i].to_array();
-            floats.extend_from_slice(&a);
-        }
-        let bytes = bytemuck::cast_slice(&floats);
-        queue.write_buffer(buffer, 0, bytes);
     }
 }
 
@@ -552,9 +573,11 @@ impl<'a> Gpu<'a> {
         };
 
         // Write the uniform to its wgpu buffer
-        let color = Vec4::new(1.0, 1.0, 0.0, 1.0);
-        self.queue
-            .write_buffer(&uniform.buffer, 0, &uniform.as_bytes(matrix, &color));
+        self.queue.write_buffer(
+            &uniform.buffer,
+            0,
+            &uniform.as_bytes(matrix, &mesh.uniform_color),
+        );
 
         let mut render_pass = self
             .frame_objects
@@ -565,7 +588,7 @@ impl<'a> Gpu<'a> {
             .unwrap();
 
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
-        render_pass.set_vertex_buffer(1, mesh.colors.slice(..));
+        render_pass.set_vertex_buffer(1, mesh.vert_colors.slice(..));
         render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
         render_pass.set_bind_group(0, &uniform.bindgroup, &[]);
 
@@ -596,7 +619,7 @@ impl<'a> Gpu<'a> {
             Vec2::new(1.0, 0.0),
         ];
 
-        let mesh = Mesh::new(&positions, None, Some((texture_id, &uvs)), &self);
+        let mesh = Mesh::new(&positions, None, Some((texture_id, &uvs)), None, &self);
         self.render_mesh(&mesh, matrix);
     }
 }
