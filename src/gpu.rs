@@ -14,18 +14,18 @@ struct Texture {
     bindgroup: wgpu::BindGroup,
 }
 
-struct Uniforms {
-    buffer: wgpu::Buffer,
-    bindgroup: wgpu::BindGroup,
-}
-
 struct FrameObjects {
     surface_texture: wgpu::SurfaceTexture,
     command_encoder: wgpu::CommandEncoder,
     render_pass: Option<wgpu::RenderPass<'static>>,
 }
 
-impl Uniforms {
+struct Uniform {
+    buffer: wgpu::Buffer,
+    bindgroup: wgpu::BindGroup,
+}
+
+impl Uniform {
     fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
         debug_assert_eq!(size_of::<Mat4>(), 16 * 4);
         debug_assert_eq!(size_of::<Vec4>(), 4 * 4);
@@ -50,6 +50,19 @@ impl Uniforms {
         });
 
         Self { buffer, bindgroup }
+    }
+
+    fn as_bytes(&self, matrix: &Mat4, color: &Vec4) -> Vec<u8> {
+        let matrix_floats = matrix.to_cols_array();
+        let matrix_bytes = bytemuck::bytes_of(&matrix_floats);
+
+        let color_floats = color.to_array();
+        let color_bytes = bytemuck::bytes_of(&color_floats);
+
+        let mut uniform_bytes = Vec::with_capacity(matrix_bytes.len() + color_bytes.len());
+        uniform_bytes.extend_from_slice(matrix_bytes);
+        uniform_bytes.extend_from_slice(color_bytes);
+        uniform_bytes
     }
 }
 
@@ -155,12 +168,12 @@ pub struct Gpu<'a> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
-    uniforms_bindgroup_layout: wgpu::BindGroupLayout,
+    uniform_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
     frame_objects: Option<FrameObjects>,
-    busy_uniforms: Vec<Uniforms>,
-    idle_uniforms: Vec<Uniforms>,
+    busy_uniforms: Vec<Uniform>,
+    idle_uniforms: Vec<Uniform>,
     width: usize,
     height: usize,
     render_count: u32,
@@ -231,7 +244,7 @@ impl<'a> Gpu<'a> {
         debug_assert_eq!(surface_config.present_mode, wgpu::PresentMode::Fifo);
         surface.configure(&device, &surface_config);
 
-        let uniforms_bindgroup_layout =
+        let uniform_bindgroup_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -274,7 +287,7 @@ impl<'a> Gpu<'a> {
         let pipeline = Self::create_pipeline(
             &device,
             &surface_config,
-            &[&uniforms_bindgroup_layout, &texture_bindgroup_layout],
+            &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
         );
 
         let mut gpu = Self {
@@ -284,7 +297,7 @@ impl<'a> Gpu<'a> {
             device,
             queue,
             pipeline,
-            uniforms_bindgroup_layout,
+            uniform_bindgroup_layout,
             texture_bindgroup_layout,
             textures: vec![],
             frame_objects: None,
@@ -533,26 +546,15 @@ impl<'a> Gpu<'a> {
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
-        let uniforms = match self.idle_uniforms.pop() {
+        let uniform = match self.idle_uniforms.pop() {
             Some(m) => m,
-            None => Uniforms::new(&self.device, &self.uniforms_bindgroup_layout),
+            None => Uniform::new(&self.device, &self.uniform_bindgroup_layout),
         };
 
-        // Write the uniforms to their wgpu buffer
-        {
-            let matrix_floats = matrix.to_cols_array();
-            let matrix_bytes = bytemuck::bytes_of(&matrix_floats);
-
-            let color_floats = Vec4::new(0.0, 1.0, 0.0, 1.0).to_array();
-            let color_bytes = bytemuck::bytes_of(&color_floats);
-
-            let mut uniform_bytes = Vec::with_capacity(matrix_bytes.len() + color_bytes.len());
-            uniform_bytes.extend_from_slice(matrix_bytes);
-            uniform_bytes.extend_from_slice(color_bytes);
-
-            // todo!("this will crash because I haven't changed the bindgroup or buffer to support a color yet. nor the shader.");
-            self.queue.write_buffer(&uniforms.buffer, 0, &uniform_bytes);
-        }
+        // Write the uniform to its wgpu buffer
+        let color = Vec4::new(1.0, 1.0, 0.0, 1.0);
+        self.queue
+            .write_buffer(&uniform.buffer, 0, &uniform.as_bytes(matrix, &color));
 
         let mut render_pass = self
             .frame_objects
@@ -565,14 +567,14 @@ impl<'a> Gpu<'a> {
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.colors.slice(..));
         render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
-        render_pass.set_bind_group(0, &uniforms.bindgroup, &[]);
+        render_pass.set_bind_group(0, &uniform.bindgroup, &[]);
 
         let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
         render_pass.set_bind_group(1, texture_bindgroup, &[]);
 
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
-        self.busy_uniforms.push(uniforms);
+        self.busy_uniforms.push(uniform);
         self.render_count += 1;
     }
 
