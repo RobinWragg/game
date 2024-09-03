@@ -86,6 +86,8 @@ impl Debugger {
         let full_output = self.ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    // TODO: Update the displayed time every second instead of every 60 frames.
+                    // TODO: also, switch to processing time.
                     self.delta_times.push_back(dt);
                     if self.delta_times.len() > 60 {
                         self.delta_times.pop_front();
