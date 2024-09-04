@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub const GRID_SIZE: i32 = 64; // TODO 64
+pub const GRID_SIZE: usize = 32; // TODO 64
 
 // This also works with i32, but the /4 causes small losses. Not a problem in a vaccuum where we expect losses, but doesn't model an airtight space well.
 pub fn update_with_2x2_equilibrium(grid: &mut Vec<Vec<f32>>) {
@@ -17,20 +17,20 @@ pub fn update_with_2x2_equilibrium(grid: &mut Vec<Vec<f32>>) {
 
     for x in (0..GRID_SIZE).step_by(2) {
         for y in (0..GRID_SIZE).step_by(2) {
-            reach_local_equilibrium(grid, x as usize, y as usize);
+            reach_local_equilibrium(grid, x, y);
         }
     }
 
     for x in (1..GRID_SIZE - 1).step_by(2) {
         for y in (1..GRID_SIZE - 1).step_by(2) {
-            reach_local_equilibrium(grid, x as usize, y as usize);
+            reach_local_equilibrium(grid, x, y);
         }
     }
 }
 
 fn update_with_shuffle23(grid: &mut Vec<Vec<f32>>) {
     fn iterate(grid: &mut Vec<Vec<f32>>, iteration: usize) {
-        let mut changes = vec![vec![0.0; GRID_SIZE as usize]; GRID_SIZE as usize];
+        let mut changes = vec![vec![0.0; GRID_SIZE]; GRID_SIZE];
 
         let directions = vec![
             (1i32, 0i32),
