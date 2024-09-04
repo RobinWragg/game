@@ -37,14 +37,15 @@ impl Game {
             Vec2::new(0.9, 0.0),
             Vec2::new(0.9, 0.9),
         ];
-        let mesh = Mesh::with_color(&verts, Vec4::new(0.0, 1.0, 1.0, 1.0), gpu);
+
+        let mesh = Mesh::new(&verts, None, None, gpu);
 
         let scale = Mat4::from_scale(Vec3::new(0.03, 0.03, 1.0));
         for x in 0..grid::GRID_SIZE {
             for y in 0..grid::GRID_SIZE {
                 let v = (self.grid[x as usize][y as usize] * 50.0).clamp(0.0, 255.0) as u8;
                 let m = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0));
-                gpu.render_mesh(&mesh, &(scale * m));
+                gpu.render_mesh(&mesh, &(scale * m), Some(Vec4::new(0.0, 1.0, 0.0, 1.0)));
             }
         }
     }

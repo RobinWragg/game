@@ -26,7 +26,6 @@ pub struct Mesh {
     vert_colors: wgpu::Buffer,
     uvs: wgpu::Buffer,
     pub texture: usize, // TODO: this pub is smelly.
-    uniform_color: Vec4,
 }
 
 impl Mesh {
@@ -34,22 +33,11 @@ impl Mesh {
         positions: &[Vec2],
         vert_colors: Option<&[Vec4]>,
         texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        uniform_color: Option<Vec4>,
         gpu: &Gpu,
     ) -> Self {
         let mut mesh = Self::allocate(positions.len(), gpu);
-        mesh.write(
-            positions,
-            vert_colors,
-            texture_id_and_uvs,
-            uniform_color,
-            gpu,
-        );
+        mesh.write(positions, vert_colors, texture_id_and_uvs, gpu);
         mesh
-    }
-
-    pub fn with_color(positions: &[Vec2], color: Vec4, gpu: &Gpu) -> Self {
-        Self::new(positions, None, None, Some(color), gpu)
     }
 
     fn allocate(vert_count: usize, gpu: &Gpu) -> Self {
@@ -63,7 +51,6 @@ impl Mesh {
             positions,
             vert_colors,
             uvs,
-            uniform_color: Vec4::new(1.0, 1.0, 1.0, 1.0),
             texture: 0,
         }
     }
@@ -73,7 +60,6 @@ impl Mesh {
         positions: &[Vec2],
         vert_colors: Option<&[Vec4]>,
         texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        uniform_color: Option<Vec4>,
         gpu: &Gpu,
     ) {
         debug_assert_eq!(positions.len(), self.vert_count);
@@ -98,12 +84,6 @@ impl Mesh {
             Self::write_vec2_slice_to_buffer(&self.uvs, uvs, &gpu.queue);
         } else {
             self.texture = WHITE_TEXTURE_ID;
-        }
-
-        if let Some(color) = uniform_color {
-            self.uniform_color = color;
-        } else {
-            self.uniform_color = Vec4::new(1.0, 1.0, 1.0, 1.0);
         }
     }
 
@@ -566,18 +546,19 @@ impl<'a> Gpu<'a> {
         dbg!(self.render_count);
     }
 
-    pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
+    pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
         let uniform = match self.idle_uniforms.pop() {
             Some(m) => m,
             None => Uniform::new(&self.device, &self.uniform_bindgroup_layout),
         };
 
         // Write the uniform to its wgpu buffer
-        self.queue.write_buffer(
-            &uniform.buffer,
-            0,
-            &uniform.as_bytes(matrix, &mesh.uniform_color),
-        );
+        let color = match color {
+            Some(c) => c,
+            None => Vec4::new(1.0, 1.0, 1.0, 1.0),
+        };
+        self.queue
+            .write_buffer(&uniform.buffer, 0, &uniform.as_bytes(matrix, &color));
 
         let mut render_pass = self
             .frame_objects
@@ -619,7 +600,7 @@ impl<'a> Gpu<'a> {
             Vec2::new(1.0, 0.0),
         ];
 
-        let mesh = Mesh::new(&positions, None, Some((texture_id, &uvs)), None, &self);
-        self.render_mesh(&mesh, matrix);
+        let mesh = Mesh::new(&positions, None, Some((texture_id, &uvs)), &self);
+        self.render_mesh(&mesh, matrix, None);
     }
 }
