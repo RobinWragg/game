@@ -40,7 +40,7 @@ impl Game {
 
         let mesh = Mesh::new(&verts, None, None, gpu);
 
-        let scale = Mat4::from_scale(Vec3::new(0.03, 0.03, 1.0));
+        let scale = Mat4::from_scale(Vec3::new(0.1 / gpu.aspect_ratio(), 0.1, 1.0));
         for x in 0..grid::GRID_SIZE {
             for y in 0..grid::GRID_SIZE {
                 let v = (self.grid[x as usize][y as usize] * 50.0).clamp(0.0, 255.0) as u8;
