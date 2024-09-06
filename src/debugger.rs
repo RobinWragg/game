@@ -95,7 +95,7 @@ impl Debugger {
         self.ctx.wants_pointer_input()
     }
 
-    pub fn render(&mut self, event_mgr: &EventMgr, gpu: &mut Gpu, dt: f32) {
+    pub fn render(&mut self, events: &EventMgr, gpu: &mut Gpu, dt: f32) {
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
         self.matrix = {

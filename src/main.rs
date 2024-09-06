@@ -80,7 +80,7 @@ impl ApplicationHandler for App<'_> {
                 self.mouse_pos /= size * 0.5;
                 self.mouse_pos -= 1.0;
                 self.mouse_pos.y *= -1.0;
-                game.event_mgr.push(Event::MousePos(self.mouse_pos));
+                game.events.push(Event::MousePos(self.mouse_pos));
             }
             WindowEvent::MouseInput {
                 device_id: _,
@@ -90,11 +90,10 @@ impl ApplicationHandler for App<'_> {
                 if button == MouseButton::Left {
                     match state {
                         ElementState::Pressed => {
-                            game.event_mgr.push(Event::LeftClickPressed(self.mouse_pos));
+                            game.events.push(Event::LeftClickPressed(self.mouse_pos));
                         }
                         ElementState::Released => {
-                            game.event_mgr
-                                .push(Event::LeftClickReleased(self.mouse_pos));
+                            game.events.push(Event::LeftClickReleased(self.mouse_pos));
                         }
                     }
                 }
