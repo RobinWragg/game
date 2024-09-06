@@ -55,7 +55,7 @@ impl ApplicationHandler for App<'_> {
 
         self.gpu = Some(Gpu::new(&window));
         self.window = Some(window.clone());
-        self.game = Some(Game::new());
+        self.game = Some(Game::new(self.gpu.as_ref().unwrap().aspect_ratio()));
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
