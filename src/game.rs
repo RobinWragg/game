@@ -64,7 +64,7 @@ impl Game {
                 gpu.render_mesh(
                     &mesh,
                     &(self.transform * m),
-                    Some(Vec4::new(0.0, v, 0.1, 1.0)),
+                    Some(Vec4::new(v, 0.0, 1.0 - v, 1.0)),
                 );
             }
         }
