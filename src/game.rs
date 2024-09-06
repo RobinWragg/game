@@ -6,7 +6,7 @@ pub struct Game {
     launch_time: Instant,
     prev_frame_start_time: Instant,
     grid: Vec<Vec<f32>>,
-    pub user: User,
+    pub event_mgr: EventMgr,
 }
 
 impl Game {
@@ -24,7 +24,7 @@ impl Game {
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
             grid,
-            user: User::default(),
+            event_mgr: EventMgr::default(),
         }
     }
 
@@ -59,11 +59,23 @@ impl Game {
         let delta_time = (frame_start_time - self.prev_frame_start_time).as_secs_f32();
         let total_time = (frame_start_time - self.launch_time).as_secs_f64();
 
+        self.event_mgr.begin_frame();
+        loop {
+            let event = match self.event_mgr.pop() {
+                Some(event) => event,
+                None => break,
+            };
+
+            if self.debugger.consume_event(&event) {
+                continue;
+            }
+        }
+
         grid::update_with_2x2_equilibrium(&mut self.grid);
         self.render_grid(gpu);
 
         // std::thread::sleep(std::time::Duration::from_millis(500)); // TODO
-        self.debugger.render(&self.user, gpu, delta_time);
+        self.debugger.render(&self.event_mgr, gpu, delta_time);
         gpu.finish_frame();
         self.prev_frame_start_time = frame_start_time;
     }

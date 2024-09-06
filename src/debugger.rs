@@ -10,6 +10,8 @@ pub struct Debugger {
     egui_to_gpu_tex_id: HashMap<u64, usize>,
     mesh: Option<Mesh>,
     delta_times: VecDeque<f32>,
+    input: egui::RawInput,
+    matrix: Mat4,
 }
 
 impl Debugger {
@@ -58,10 +60,45 @@ impl Debugger {
         gpu.render_mesh(&mesh, &Mat4::IDENTITY, None);
     }
 
-    pub fn render(&mut self, user: &User, gpu: &mut Gpu, dt: f32) {
+    pub fn consume_event(&mut self, event: &Event) -> bool {
+        match event {
+            Event::LeftClickPressed(pos) => {
+                let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
+                self.input.events.push(egui::Event::PointerButton {
+                    pos: mouse_egui,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                });
+            }
+            Event::LeftClickReleased(pos) => {
+                let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
+                self.input.events.push(egui::Event::PointerButton {
+                    pos: mouse_egui,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                });
+            }
+            Event::MousePos(pos) => {
+                let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
+                self.input
+                    .events
+                    .push(egui::Event::PointerMoved(mouse_egui));
+            }
+            _ => (),
+        }
+
+        self.ctx.wants_pointer_input()
+    }
+
+    pub fn render(&mut self, event_mgr: &EventMgr, gpu: &mut Gpu, dt: f32) {
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
-        let matrix = {
+        self.matrix = {
             let scale_x = (self.ctx.pixels_per_point() * 2.0) / gpu.width() as f32;
             let scale_y = (self.ctx.pixels_per_point() * 2.0) / gpu.height() as f32;
             let trans_matrix = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0));
@@ -69,21 +106,8 @@ impl Debugger {
             trans_matrix * scale_matrix
         };
 
-        let raw_input = {
-            let mut raw_input = egui::RawInput::default();
-            let mouse_egui = user.mouse(&matrix.inverse());
-            let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
-            raw_input.events.push(egui::Event::PointerMoved(mouse_egui));
-            raw_input.events.push(egui::Event::PointerButton {
-                pos: mouse_egui,
-                button: egui::PointerButton::Primary,
-                pressed: user.left_button_down,
-                modifiers: egui::Modifiers::default(),
-            });
-            raw_input
-        };
-
-        let full_output = self.ctx.run(raw_input, |ctx| {
+        // dbg!(&self.input.events);
+        let full_output = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     // TODO: Update the displayed time every second instead of every 60 frames.
@@ -185,7 +209,7 @@ impl Debugger {
                 Some((gpu_tex_id, &vert_uvs)),
                 gpu,
             );
-            gpu.render_mesh(&mesh, &matrix, None);
+            gpu.render_mesh(&mesh, &self.matrix, None);
         }
     }
 }

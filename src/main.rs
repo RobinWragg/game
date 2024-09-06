@@ -3,11 +3,11 @@
 #![allow(dead_code)]
 
 mod debugger;
+mod events;
 mod game;
 mod gpu;
 mod grid;
 mod prelude;
-mod user;
 
 use game::Game;
 use prelude::*;
@@ -24,11 +24,11 @@ use winit::{
 const WINDOW_WIDTH: u32 = 1200;
 const WINDOW_HEIGHT: u32 = 675;
 
-// #[derive(Default)]
 struct App<'a> {
     window: Option<Arc<Window>>,
     gpu: Option<Gpu<'a>>,
     game: Option<Game>,
+    mouse_pos: Vec2,
 }
 
 impl ApplicationHandler for App<'_> {
@@ -74,13 +74,13 @@ impl ApplicationHandler for App<'_> {
                     let size = self.window.as_ref().unwrap().inner_size();
                     Vec2::new(size.width as f32, size.height as f32)
                 };
-                let mut position = Vec2::new(position.x as f32, position.y as f32);
+                self.mouse_pos = Vec2::new(position.x as f32, position.y as f32);
 
                 // Convert to NDC
-                position /= size * 0.5;
-                position -= 1.0;
-                position.y *= -1.0;
-                game.user.set_mouse_ndc(&position);
+                self.mouse_pos /= size * 0.5;
+                self.mouse_pos -= 1.0;
+                self.mouse_pos.y *= -1.0;
+                game.event_mgr.push(Event::MousePos(self.mouse_pos));
             }
             WindowEvent::MouseInput {
                 device_id: _,
@@ -88,7 +88,15 @@ impl ApplicationHandler for App<'_> {
                 button,
             } => {
                 if button == MouseButton::Left {
-                    game.user.left_button_down = state.is_pressed();
+                    match state {
+                        ElementState::Pressed => {
+                            game.event_mgr.push(Event::LeftClickPressed(self.mouse_pos));
+                        }
+                        ElementState::Released => {
+                            game.event_mgr
+                                .push(Event::LeftClickReleased(self.mouse_pos));
+                        }
+                    }
                 }
             }
             WindowEvent::CloseRequested => event_loop.exit(), // TODO: call this when doing cmd+Q etc
@@ -107,6 +115,7 @@ fn main() {
         game: None,
         window: None,
         gpu: None,
+        mouse_pos: Vec2::ZERO,
     };
     let _ = event_loop.run_app(&mut app);
 }

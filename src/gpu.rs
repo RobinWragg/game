@@ -544,10 +544,8 @@ impl<'a> Gpu<'a> {
         self.queue.submit(std::iter::once(finished_command_buffer));
 
         std::mem::swap(&mut self.idle_uniforms, &mut self.busy_uniforms);
-        dbg!(self.idle_uniforms.len());
 
         frame_objects.surface_texture.present();
-        dbg!(self.render_count);
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
