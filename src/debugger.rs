@@ -61,42 +61,43 @@ impl Debugger {
         gpu.render_mesh(&mesh, &Mat4::IDENTITY, None);
     }
 
-    pub fn consume_event(&mut self, event: &Event) -> bool {
-        match event {
-            Event::LeftClickPressed(pos) => {
-                let mouse_egui = transform_2d(pos, &self.matrix.inverse());
-                let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
-                self.input.events.push(egui::Event::PointerButton {
-                    pos: mouse_egui,
-                    button: egui::PointerButton::Primary,
-                    pressed: true,
-                    modifiers: egui::Modifiers::default(),
-                });
+    pub fn update(&mut self, events: &mut VecDeque<Event>, dt: f32, gpu: &Gpu) {
+        events.retain(|event| {
+            match event {
+                Event::LeftClickPressed(pos) => {
+                    let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                    let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
+                    self.input.events.push(egui::Event::PointerButton {
+                        pos: mouse_egui,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    });
+                }
+                Event::LeftClickReleased(pos) => {
+                    let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                    let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
+                    self.input.events.push(egui::Event::PointerButton {
+                        pos: mouse_egui,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    });
+                }
+                Event::MousePos(pos) => {
+                    let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                    let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
+                    self.input
+                        .events
+                        .push(egui::Event::PointerMoved(mouse_egui));
+                }
+                _ => (),
             }
-            Event::LeftClickReleased(pos) => {
-                let mouse_egui = transform_2d(pos, &self.matrix.inverse());
-                let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
-                self.input.events.push(egui::Event::PointerButton {
-                    pos: mouse_egui,
-                    button: egui::PointerButton::Primary,
-                    pressed: false,
-                    modifiers: egui::Modifiers::default(),
-                });
-            }
-            Event::MousePos(pos) => {
-                let mouse_egui = transform_2d(pos, &self.matrix.inverse());
-                let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
-                self.input
-                    .events
-                    .push(egui::Event::PointerMoved(mouse_egui));
-            }
-            _ => (),
-        }
 
-        self.ctx.wants_pointer_input()
-    }
+            // Remove pointer events (return false) if the egui context wants them.
+            !self.ctx.wants_pointer_input()
+        });
 
-    pub fn update(&mut self, events: &EventMgr, dt: f32, gpu: &Gpu) {
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
         self.matrix = {

@@ -6,8 +6,8 @@ pub struct Game {
     launch_time: Instant,
     prev_frame_start_time: Instant,
     grid: Vec<Vec<Atom>>,
-    pub events: EventMgr,
     transform: Mat4,
+    pub events_for_next_frame: VecDeque<Event>,
 }
 
 impl Game {
@@ -22,13 +22,13 @@ impl Game {
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
             grid,
-            events: EventMgr::default(),
             transform,
+            events_for_next_frame: VecDeque::new(),
         }
     }
 
-    fn consume_event(&mut self, event: Event) -> bool {
-        match event {
+    fn update_and_render_grid(&mut self, events: &mut VecDeque<Event>, gpu: &mut Gpu) {
+        events.retain(|event| match event {
             Event::LeftClickPressed(pos) => {
                 let v = transform_2d(&pos, &self.transform.inverse());
                 let x = v.x as usize;
@@ -36,11 +36,9 @@ impl Game {
                 self.grid[x][y] = Atom::Gas(5000.0);
                 true
             }
-            _ => false,
-        }
-    }
+            _ => true,
+        });
 
-    fn render_grid(&self, gpu: &mut Gpu) {
         let verts = vec![
             Vec2::new(0.0, 0.0),
             Vec2::new(0.9, 0.0),
@@ -71,18 +69,12 @@ impl Game {
         let delta_time = (frame_start_time - self.prev_frame_start_time).as_secs_f32();
         let total_time = (frame_start_time - self.launch_time).as_secs_f64();
 
-        self.events.begin_frame();
-        while let Some(event) = self.events.pop() {
-            if self.debugger.consume_event(&event) {
-                continue;
-            } else if self.consume_event(event) {
-                continue;
-            }
-        }
+        let mut events = std::mem::take(&mut self.events_for_next_frame);
+
+        self.debugger.update(&mut events, delta_time, gpu);
 
         update_with_2x2_equilibrium(&mut self.grid);
-        self.debugger.update(&self.events, delta_time, gpu);
-        self.render_grid(gpu);
+        self.update_and_render_grid(&mut events, gpu);
 
         // std::thread::sleep(std::time::Duration::from_millis(500)); // TODO
         self.debugger.render(gpu);
