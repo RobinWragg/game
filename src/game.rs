@@ -81,10 +81,11 @@ impl Game {
         }
 
         update_with_2x2_equilibrium(&mut self.grid);
+        self.debugger.update(&self.events, delta_time, gpu);
         self.render_grid(gpu);
 
         // std::thread::sleep(std::time::Duration::from_millis(500)); // TODO
-        self.debugger.render(&self.events, gpu, delta_time);
+        self.debugger.render(gpu);
         gpu.finish_frame();
         self.prev_frame_start_time = frame_start_time;
     }

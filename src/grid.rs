@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub const GRID_SIZE: usize = 64; // TODO 64
+pub const GRID_SIZE: usize = 32;
 
 #[derive(Copy, Clone)]
 pub enum Atom {

@@ -12,6 +12,7 @@ pub struct Debugger {
     delta_times: VecDeque<f32>,
     input: egui::RawInput,
     matrix: Mat4,
+    full_output: egui::FullOutput,
 }
 
 impl Debugger {
@@ -95,7 +96,7 @@ impl Debugger {
         self.ctx.wants_pointer_input()
     }
 
-    pub fn render(&mut self, events: &EventMgr, gpu: &mut Gpu, dt: f32) {
+    pub fn update(&mut self, events: &EventMgr, dt: f32, gpu: &Gpu) {
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
         self.matrix = {
@@ -106,8 +107,7 @@ impl Debugger {
             trans_matrix * scale_matrix
         };
 
-        // dbg!(&self.input.events);
-        let full_output = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
+        self.full_output = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     // TODO: Update the displayed time every second instead of every 60 frames.
@@ -127,10 +127,12 @@ impl Debugger {
                 ui.add(egui::Slider::new(&mut slider_value, 0.0..=2.0).text("Speed"));
             });
         });
+    }
 
-        if !full_output.textures_delta.set.is_empty() {
-            assert_eq!(full_output.textures_delta.set.len(), 1);
-            let (egui_tex_id, delta) = &full_output.textures_delta.set[0];
+    pub fn render(&mut self, gpu: &mut Gpu) {
+        if !self.full_output.textures_delta.set.is_empty() {
+            assert_eq!(self.full_output.textures_delta.set.len(), 1);
+            let (egui_tex_id, delta) = &self.full_output.textures_delta.set[0];
             assert_eq!(delta.options.magnification, TextureFilter::Linear);
             assert_eq!(delta.options.minification, TextureFilter::Linear);
             assert_eq!(delta.options.wrap_mode, TextureWrapMode::ClampToEdge);
@@ -159,11 +161,12 @@ impl Debugger {
 
             self.egui_to_gpu_tex_id.insert(egui_tex_id, gpu_tex_id);
         }
-        assert!(full_output.textures_delta.free.is_empty());
+        assert!(self.full_output.textures_delta.free.is_empty());
 
+        let shapes = std::mem::take(&mut self.full_output.shapes);
         for prim in self
             .ctx
-            .tessellate(full_output.shapes, full_output.pixels_per_point)
+            .tessellate(shapes, self.full_output.pixels_per_point)
         {
             let mesh = match prim.primitive {
                 egui::epaint::Primitive::Mesh(m) => m,
