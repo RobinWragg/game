@@ -27,13 +27,21 @@ impl Game {
         }
     }
 
-    fn update_and_render_grid(&mut self, events: &mut VecDeque<Event>, gpu: &mut Gpu) {
+    fn update_and_render_grid(
+        &mut self,
+        events: &mut VecDeque<Event>,
+        current_atom: Atom,
+        gpu: &mut Gpu,
+    ) {
         events.retain(|event| match event {
             Event::LeftClickPressed(pos) => {
                 let v = transform_2d(&pos, &self.transform.inverse());
                 let x = v.x as usize;
                 let y = v.y as usize;
-                self.grid[x][y] = Atom::Gas(5000.0);
+                match current_atom {
+                    Atom::Gas(_) => self.grid[x][y] = Atom::Gas(10000.0),
+                    _ => self.grid[x][y] = current_atom,
+                }
                 true
             }
             _ => true,
@@ -55,6 +63,7 @@ impl Game {
                 let color = match self.grid[x][y] {
                     Atom::Gas(v) => Vec4::new(v * 0.01, 0.0, 1.0 - v * 0.01, 1.0),
                     Atom::Solid => Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    Atom::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
                 };
                 let m = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0));
                 gpu.render_mesh(&mesh, &(self.transform * m), Some(color));
@@ -74,7 +83,7 @@ impl Game {
         self.debugger.update(&mut events, delta_time, gpu);
 
         update_with_2x2_equilibrium(&mut self.grid);
-        self.update_and_render_grid(&mut events, gpu);
+        self.update_and_render_grid(&mut events, self.debugger.current_atom, gpu);
 
         // std::thread::sleep(std::time::Duration::from_millis(500)); // TODO
         self.debugger.render(gpu);

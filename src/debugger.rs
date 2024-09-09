@@ -1,3 +1,4 @@
+use crate::grid::Atom;
 use crate::prelude::*;
 use egui::epaint::{image::ImageData, textures::*};
 use egui::{self, Modifiers};
@@ -13,6 +14,7 @@ pub struct Debugger {
     input: egui::RawInput,
     matrix: Mat4,
     full_output: egui::FullOutput,
+    pub current_atom: Atom,
 }
 
 impl Debugger {
@@ -122,7 +124,12 @@ impl Debugger {
                     ui.label(format!("Worst frame: {:.1}ms", max_dt * 1000.0));
                 });
             });
-            egui::Window::new("World").show(&ctx, |ui| {
+            egui::Window::new("Editor").show(&ctx, |ui| {
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+                    ui.radio_value(&mut self.current_atom, Atom::default(), "Gas");
+                    ui.radio_value(&mut self.current_atom, Atom::Solid, "Solid");
+                    ui.radio_value(&mut self.current_atom, Atom::Liquid, "Liquid");
+                });
                 let _ = ui.button("Reset");
                 let mut slider_value = 1.0;
                 ui.add(egui::Slider::new(&mut slider_value, 0.0..=2.0).text("Speed"));

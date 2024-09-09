@@ -2,10 +2,17 @@ use crate::prelude::*;
 
 pub const GRID_SIZE: usize = 32;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Atom {
     Gas(f32),
     Solid,
+    Liquid,
+}
+
+impl Default for Atom {
+    fn default() -> Self {
+        Atom::Gas(0.0)
+    }
 }
 
 fn mut_gas_pressures(grid: &mut Vec<Vec<Atom>>, x: usize, y: usize) -> Vec<&mut f32> {
