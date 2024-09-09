@@ -7,7 +7,9 @@ pub struct Game {
     prev_frame_start_time: Instant,
     grid: Vec<Vec<Atom>>,
     transform: Mat4,
-    pub events_for_next_frame: VecDeque<Event>,
+    events_for_next_frame: VecDeque<Event>,
+    dragging_pos: Option<Vec2>,
+    previous_mouse_pos_for_deduplication: Vec2,
 }
 
 impl Game {
@@ -24,25 +26,69 @@ impl Game {
             grid,
             transform,
             events_for_next_frame: VecDeque::new(),
+            dragging_pos: None,
+            previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
+        }
+    }
+
+    pub fn push_event(&mut self, event: Event) {
+        let event = match event {
+            Event::MousePos(pos) => {
+                if pos.distance(self.previous_mouse_pos_for_deduplication) > 0.0001 {
+                    self.previous_mouse_pos_for_deduplication = pos;
+                    Some(event)
+                } else {
+                    None
+                }
+            }
+            _ => Some(event),
+        };
+        if let Some(event) = event {
+            self.events_for_next_frame.push_back(event);
         }
     }
 
     fn update_and_render_grid(
         &mut self,
         events: &mut VecDeque<Event>,
-        current_atom: Atom,
+        editor: EditorState,
         gpu: &mut Gpu,
     ) {
+        let mut modify_grid_under_path = |start: &Vec2, end: &Vec2| {
+            let start = transform_2d(start, &self.transform.inverse());
+            let end = transform_2d(end, &self.transform.inverse());
+
+            let start = (
+                start.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+                start.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+            );
+            let end = (
+                end.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+                end.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+            );
+
+            for (x, y) in atoms_on_path(start, end) {
+                self.grid[x][y] = editor.current_atom;
+            }
+        };
+
         events.retain(|event| match event {
-            Event::LeftClickPressed(pos) => {
-                let v = transform_2d(&pos, &self.transform.inverse());
-                let x = v.x as usize;
-                let y = v.y as usize;
-                match current_atom {
-                    Atom::Gas(_) => self.grid[x][y] = Atom::Gas(10000.0),
-                    _ => self.grid[x][y] = current_atom,
+            Event::MousePos(end) => {
+                if let Some(start) = self.dragging_pos {
+                    // TODO: This can currently be called multiple times per atom when dragging, so my dragging_pos should be a Option<(usize, usize)> instead.
+                    modify_grid_under_path(&start, end);
+                    self.dragging_pos = Some(*end);
                 }
-                true
+                false
+            }
+            Event::LeftClickPressed(pos) => {
+                modify_grid_under_path(pos, pos);
+                self.dragging_pos = Some(*pos);
+                false
+            }
+            Event::LeftClickReleased(_) => {
+                self.dragging_pos = None;
+                false
             }
             _ => true,
         });
@@ -83,7 +129,7 @@ impl Game {
         self.debugger.update(&mut events, delta_time, gpu);
 
         update_with_2x2_equilibrium(&mut self.grid);
-        self.update_and_render_grid(&mut events, self.debugger.current_atom, gpu);
+        self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
 
         // std::thread::sleep(std::time::Duration::from_millis(500)); // TODO
         self.debugger.render(gpu);

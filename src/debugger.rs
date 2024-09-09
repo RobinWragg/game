@@ -1,4 +1,4 @@
-use crate::grid::Atom;
+use crate::grid::{Atom, EditorState};
 use crate::prelude::*;
 use egui::epaint::{image::ImageData, textures::*};
 use egui::{self, Modifiers};
@@ -14,7 +14,7 @@ pub struct Debugger {
     input: egui::RawInput,
     matrix: Mat4,
     full_output: egui::FullOutput,
-    pub current_atom: Atom,
+    pub editor_state: EditorState,
 }
 
 impl Debugger {
@@ -126,13 +126,22 @@ impl Debugger {
             });
             egui::Window::new("Editor").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-                    ui.radio_value(&mut self.current_atom, Atom::default(), "Gas");
-                    ui.radio_value(&mut self.current_atom, Atom::Solid, "Solid");
-                    ui.radio_value(&mut self.current_atom, Atom::Liquid, "Liquid");
+                    let radio_atom = self.editor_state.current_atom;
+                    ui.radio_value(
+                        &mut self.editor_state.current_atom,
+                        if let Atom::Gas(p) = radio_atom {
+                            Atom::Gas(p)
+                        } else {
+                            Atom::Gas(0.0)
+                        },
+                        "Gas",
+                    );
+                    ui.radio_value(&mut self.editor_state.current_atom, Atom::Solid, "Solid");
+                    ui.radio_value(&mut self.editor_state.current_atom, Atom::Liquid, "Liquid");
                 });
-                let _ = ui.button("Reset");
-                let mut slider_value = 1.0;
-                ui.add(egui::Slider::new(&mut slider_value, 0.0..=2.0).text("Speed"));
+                if let Atom::Gas(pressure) = &mut self.editor_state.current_atom {
+                    ui.add(egui::Slider::new(pressure, 0.0..=1000.0).text("Pressure"));
+                }
             });
         });
     }
