@@ -49,7 +49,7 @@ pub fn update_with_2x2_equilibrium(grid: &mut Vec<Vec<Atom>>) {
             pressure_total += **pressure;
         }
 
-        let total_over_4 = pressure_total / 4.0;
+        let total_over_4 = pressure_total / pressures.len() as f32;
 
         for pressure in pressures {
             *pressure = total_over_4;
