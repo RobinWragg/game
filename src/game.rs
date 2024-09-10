@@ -17,10 +17,7 @@ pub struct Game {
 
 impl Game {
     pub fn new(aspect_ratio: f32) -> Game {
-        let grid = Self::load_grid().unwrap_or_else(|| {
-            println!("Creating new grid");
-            vec![vec![Atom::Gas(0.0); GRID_SIZE]; GRID_SIZE]
-        });
+        let grid = Self::load_grid();
 
         let transform = Mat4::from_translation(Vec3::new(-0.9, -0.9, 0.0))
             * Mat4::from_scale(Vec3::new(0.05 / aspect_ratio, 0.05, 1.0));
@@ -37,13 +34,28 @@ impl Game {
         }
     }
 
-    fn load_grid() -> Option<Vec<Vec<Atom>>> {
-        let mut file = File::open("nopush/grid_save.json").ok()?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).ok()?;
-        let grid: Vec<Vec<Atom>> = serde_json::from_str(&contents).ok()?;
-        println!("Grid loaded from nopush/grid_save.json");
-        Some(grid)
+    fn load_grid() -> Vec<Vec<Atom>> {
+        let result = File::open("nopush/grid_save.json")
+            .and_then(|mut file| {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents)?;
+                Ok(contents)
+            })
+            .and_then(|contents| {
+                serde_json::from_str(&contents)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            });
+
+        match result {
+            Ok(grid) => {
+                println!("Grid loaded from nopush/grid_save.json");
+                grid
+            }
+            Err(_) => {
+                println!("Creating new grid");
+                vec![vec![Atom::Gas(0.0); GRID_SIZE]; GRID_SIZE]
+            }
+        }
     }
 
     pub fn push_event(&mut self, event: Event) {
@@ -69,6 +81,10 @@ impl Game {
         editor: EditorState,
         gpu: &mut Gpu,
     ) {
+        if editor.should_reload {
+            self.grid = Self::load_grid();
+        }
+
         let mut modify_grid_under_path = |start: &Vec2, end: &Vec2| {
             let start = transform_2d(start, &self.transform.inverse());
             let end = transform_2d(end, &self.transform.inverse());

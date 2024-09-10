@@ -6,7 +6,7 @@ pub const GRID_SIZE: usize = 32;
 #[derive(Default, Copy, Clone)]
 pub struct EditorState {
     pub current_atom: Atom,
-    slider_value: f32,
+    pub should_reload: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]

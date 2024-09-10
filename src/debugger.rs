@@ -142,6 +142,8 @@ impl Debugger {
                 if let Atom::Gas(pressure) = &mut self.editor_state.current_atom {
                     ui.add(egui::Slider::new(pressure, -100.0..=100.0).text("Pressure"));
                 }
+
+                self.editor_state.should_reload = ui.button("Reload").clicked();
             });
         });
     }
