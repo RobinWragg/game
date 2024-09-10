@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use serde::{Deserialize, Serialize};
 
 pub const GRID_SIZE: usize = 32;
 
@@ -8,7 +9,7 @@ pub struct EditorState {
     slider_value: f32,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Atom {
     Gas(f32),
     Solid,

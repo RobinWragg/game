@@ -1,5 +1,8 @@
 use crate::grid::*;
 use crate::prelude::*;
+use serde_json;
+use std::fs::File;
+use std::io::{Read, Write};
 
 pub struct Game {
     debugger: Debugger,
@@ -14,7 +17,10 @@ pub struct Game {
 
 impl Game {
     pub fn new(aspect_ratio: f32) -> Game {
-        let mut grid = vec![vec![Atom::Gas(0.0); GRID_SIZE]; GRID_SIZE];
+        let grid = Self::load_grid().unwrap_or_else(|| {
+            println!("Creating new grid");
+            vec![vec![Atom::Gas(0.0); GRID_SIZE]; GRID_SIZE]
+        });
 
         let transform = Mat4::from_translation(Vec3::new(-0.9, -0.9, 0.0))
             * Mat4::from_scale(Vec3::new(0.05 / aspect_ratio, 0.05, 1.0));
@@ -29,6 +35,15 @@ impl Game {
             dragging_pos: None,
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
         }
+    }
+
+    fn load_grid() -> Option<Vec<Vec<Atom>>> {
+        let mut file = File::open("nopush/grid_save.json").ok()?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).ok()?;
+        let grid: Vec<Vec<Atom>> = serde_json::from_str(&contents).ok()?;
+        println!("Grid loaded from nopush/grid_save.json");
+        Some(grid)
     }
 
     pub fn push_event(&mut self, event: Event) {
@@ -135,5 +150,19 @@ impl Game {
         self.debugger.render(gpu);
         gpu.finish_frame();
         self.prev_frame_start_time = frame_start_time;
+    }
+}
+
+impl Drop for Game {
+    fn drop(&mut self) {
+        // Serialize the grid to JSON
+        let json = serde_json::to_string(&self.grid).expect("Failed to serialize grid");
+
+        // Save the JSON to a file
+        let mut file = File::create("nopush/grid_save.json").expect("Failed to create file");
+        file.write_all(json.as_bytes())
+            .expect("Failed to write to file");
+
+        println!("Grid saved to nopush/grid_save.json");
     }
 }
