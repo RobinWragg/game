@@ -109,6 +109,16 @@ pub fn update_with_2x2_equilibrium(grid: &mut Vec<Vec<Atom>>) {
             reach_local_equilibrium(grid, x, y);
         }
     }
+
+    // Erase edges
+    for x in 0..GRID_SIZE {
+        grid[x][0] = Atom::Gas(0.0);
+        grid[x][GRID_SIZE - 1] = Atom::Gas(0.0);
+    }
+    for y in 0..GRID_SIZE {
+        grid[0][y] = Atom::Gas(0.0);
+        grid[GRID_SIZE - 1][y] = Atom::Gas(0.0);
+    }
 }
 
 #[cfg(test)]
