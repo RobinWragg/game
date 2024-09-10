@@ -140,7 +140,7 @@ impl Debugger {
                     ui.radio_value(&mut self.editor_state.current_atom, Atom::Liquid, "Liquid");
                 });
                 if let Atom::Gas(pressure) = &mut self.editor_state.current_atom {
-                    ui.add(egui::Slider::new(pressure, 0.0..=1000.0).text("Pressure"));
+                    ui.add(egui::Slider::new(pressure, -100.0..=100.0).text("Pressure"));
                 }
             });
         });
