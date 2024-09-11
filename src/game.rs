@@ -124,6 +124,10 @@ impl Game {
             _ => true,
         });
 
+        if editor.is_playing || editor.should_step {
+            update_with_2x2_equilibrium(&mut self.grid);
+        }
+
         let verts = vec![
             Vec2::new(0.0, 0.0),
             Vec2::new(0.9, 0.0),
@@ -158,11 +162,6 @@ impl Game {
         let mut events = std::mem::take(&mut self.events_for_next_frame);
 
         self.debugger.update(&mut events, delta_time, gpu);
-
-        if self.debugger.editor_state.is_playing || self.debugger.editor_state.should_step {
-            update_with_2x2_equilibrium(&mut self.grid);
-            self.debugger.editor_state.should_step = false;
-        }
 
         self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
 
