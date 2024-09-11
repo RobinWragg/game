@@ -159,10 +159,13 @@ impl Game {
 
         self.debugger.update(&mut events, delta_time, gpu);
 
-        update_with_2x2_equilibrium(&mut self.grid);
+        if self.debugger.editor_state.is_playing || self.debugger.editor_state.should_step {
+            update_with_2x2_equilibrium(&mut self.grid);
+            self.debugger.editor_state.should_step = false;
+        }
+
         self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
 
-        // std::thread::sleep(std::time::Duration::from_millis(500)); // TODO
         self.debugger.render(gpu);
         gpu.finish_frame();
         self.prev_frame_start_time = frame_start_time;

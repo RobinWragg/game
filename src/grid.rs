@@ -7,6 +7,8 @@ pub const GRID_SIZE: usize = 32;
 pub struct EditorState {
     pub current_atom: Atom,
     pub should_reload: bool,
+    pub is_playing: bool,
+    pub should_step: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]

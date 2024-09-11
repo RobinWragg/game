@@ -144,6 +144,19 @@ impl Debugger {
                 }
 
                 self.editor_state.should_reload = ui.button("Reload").clicked();
+
+                if ui
+                    .button(if self.editor_state.is_playing {
+                        "Pause"
+                    } else {
+                        "Play"
+                    })
+                    .clicked()
+                {
+                    self.editor_state.is_playing = !self.editor_state.is_playing;
+                }
+
+                self.editor_state.should_step = ui.button("Step").clicked();
             });
         });
     }
