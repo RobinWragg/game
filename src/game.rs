@@ -98,7 +98,7 @@ impl Game {
                 end.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
             );
 
-            for (x, y) in atoms_on_path(start, end) {
+            for (x, y) in Grid::atoms_on_path(start, end) {
                 self.grid[x][y] = editor.current_atom;
             }
         };
