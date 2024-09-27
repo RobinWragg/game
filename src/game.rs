@@ -1,8 +1,6 @@
 use crate::grid::*;
 use crate::prelude::*;
 use serde_json;
-use std::fs::File;
-use std::io::{Read, Write};
 
 pub struct Game {
     debugger: Debugger,
@@ -17,8 +15,6 @@ pub struct Game {
 
 impl Game {
     pub fn new(aspect_ratio: f32) -> Game {
-        let grid = Self::load_grid();
-
         let transform = Mat4::from_translation(Vec3::new(-0.9, -0.9, 0.0))
             * Mat4::from_scale(Vec3::new(0.05 / aspect_ratio, 0.05, 1.0));
 
@@ -26,35 +22,11 @@ impl Game {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
-            grid: Grid::new(),
+            grid: Grid::load(),
             transform,
             events_for_next_frame: VecDeque::new(),
             dragging_pos: None,
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
-        }
-    }
-
-    fn load_grid() -> Grid {
-        let result = File::open("nopush/grid_save.json")
-            .and_then(|mut file| {
-                let mut contents = String::new();
-                file.read_to_string(&mut contents)?;
-                Ok(contents)
-            })
-            .and_then(|contents| {
-                serde_json::from_str(&contents)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            });
-
-        match result {
-            Ok(grid) => {
-                println!("Grid loaded from nopush/grid_save.json");
-                grid
-            }
-            Err(_) => {
-                println!("Creating new grid");
-                Grid::new()
-            }
         }
     }
 
@@ -82,7 +54,7 @@ impl Game {
         gpu: &mut Gpu,
     ) {
         if editor.should_reload {
-            self.grid = Self::load_grid();
+            self.grid = Grid::load();
         }
 
         let mut modify_grid_under_path = |start: &Vec2, end: &Vec2| {
@@ -173,14 +145,6 @@ impl Game {
 
 impl Drop for Game {
     fn drop(&mut self) {
-        // Serialize the grid to JSON
-        let json = serde_json::to_string(&self.grid).expect("Failed to serialize grid");
-
-        // Save the JSON to a file
-        let mut file = File::create("nopush/grid_save.json").expect("Failed to create file");
-        file.write_all(json.as_bytes())
-            .expect("Failed to write to file");
-
-        println!("Grid saved to nopush/grid_save.json");
+        self.grid.save();
     }
 }

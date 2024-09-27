@@ -1,5 +1,7 @@
 use crate::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{Read, Write};
 
 pub const GRID_SIZE: usize = 32;
 
@@ -32,6 +34,38 @@ impl Grid {
     pub fn new() -> Self {
         Self {
             atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
+        }
+    }
+
+    pub fn save(&self) {
+        let json = serde_json::to_string(&self.atoms).expect("Failed to serialize grid");
+
+        let mut file = File::create("nopush/grid_save.json").expect("Failed to create file");
+        file.write_all(json.as_bytes())
+            .expect("Failed to write to file");
+
+        println!("Grid saved to nopush/grid_save.json");
+    }
+
+    pub fn load() -> Self {
+        fn load_inner() -> Result<Vec<Vec<Atom>>, std::io::Error> {
+            let mut file = File::open("nopush/grid_save.json")?;
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)?;
+            Ok(serde_json::from_str(&contents)?)
+        }
+
+        match load_inner() {
+            Ok(atoms) => {
+                println!("Loading grid from file");
+                let mut grid = Self::new();
+                grid.atoms = atoms;
+                grid
+            }
+            Err(_) => {
+                println!("Creating new grid");
+                Self::new()
+            }
         }
     }
 
