@@ -8,7 +8,7 @@ pub struct Game {
     debugger: Debugger,
     launch_time: Instant,
     prev_frame_start_time: Instant,
-    grid: Vec<Vec<Atom>>,
+    grid: Grid,
     transform: Mat4,
     events_for_next_frame: VecDeque<Event>,
     dragging_pos: Option<Vec2>,
@@ -26,7 +26,7 @@ impl Game {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
-            grid,
+            grid: Grid::new(),
             transform,
             events_for_next_frame: VecDeque::new(),
             dragging_pos: None,
@@ -34,7 +34,7 @@ impl Game {
         }
     }
 
-    fn load_grid() -> Vec<Vec<Atom>> {
+    fn load_grid() -> Grid {
         let result = File::open("nopush/grid_save.json")
             .and_then(|mut file| {
                 let mut contents = String::new();
@@ -53,7 +53,7 @@ impl Game {
             }
             Err(_) => {
                 println!("Creating new grid");
-                vec![vec![Atom::Gas(0.0); GRID_SIZE]; GRID_SIZE]
+                Grid::new()
             }
         }
     }
@@ -99,7 +99,7 @@ impl Game {
             );
 
             for (x, y) in Grid::atoms_on_path(start, end) {
-                self.grid[x][y] = editor.current_atom;
+                self.grid.atoms[x][y] = editor.current_atom;
             }
         };
 
@@ -125,7 +125,7 @@ impl Game {
         });
 
         if editor.is_playing || editor.should_step {
-            update_with_2x2_equilibrium(&mut self.grid);
+            self.grid.update();
         }
 
         let verts = vec![
@@ -141,7 +141,7 @@ impl Game {
 
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
-                let color = match self.grid[x][y] {
+                let color = match self.grid.atoms[x][y] {
                     Atom::Gas(v) => Vec4::new(v * 0.01, 0.0, 1.0 - v * 0.01, 1.0),
                     Atom::Solid => Vec4::new(0.0, 1.0, 0.0, 1.0),
                     Atom::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),

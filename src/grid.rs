@@ -25,10 +25,16 @@ impl Default for Atom {
 }
 
 pub struct Grid {
-    atoms: Vec<Vec<Atom>>,
+    pub atoms: Vec<Vec<Atom>>,
 }
 
 impl Grid {
+    pub fn new() -> Self {
+        Self {
+            atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
+        }
+    }
+
     pub fn atoms_on_path(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
         let mut path: Vec<(i32, i32)> = vec![];
 
@@ -87,7 +93,11 @@ impl Grid {
         pressures
     }
 
-    pub fn update_with_2x2_equilibrium(&mut self) {
+    pub fn update(&mut self) {
+        self.update_with_2x2_equilibrium();
+    }
+
+    fn update_with_2x2_equilibrium(&mut self) {
         debug_assert!(GRID_SIZE % 2 == 0);
 
         let mut reach_local_equilibrium = |x: usize, y: usize| {
