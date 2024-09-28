@@ -15,8 +15,9 @@ pub struct Game {
 
 impl Game {
     pub fn new(aspect_ratio: f32) -> Game {
+        let scale = 0.1;
         let transform = Mat4::from_translation(Vec3::new(-0.9, -0.9, 0.0))
-            * Mat4::from_scale(Vec3::new(0.05 / aspect_ratio, 0.05, 1.0));
+            * Mat4::from_scale(Vec3::new(scale / aspect_ratio, scale, 1.0));
 
         Self {
             debugger: Debugger::default(),
@@ -57,35 +58,24 @@ impl Game {
             self.grid = Grid::load();
         }
 
-        let mut modify_grid_under_path = |start: &Vec2, end: &Vec2| {
-            let start = transform_2d(start, &self.transform.inverse());
-            let end = transform_2d(end, &self.transform.inverse());
-
-            let start = (
-                start.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-                start.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-            );
-            let end = (
-                end.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-                end.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-            );
-
-            for (x, y) in Grid::atoms_on_path(start, end) {
-                self.grid.atoms[x][y] = editor.current_atom;
-            }
-        };
-
         events.retain(|event| match event {
             Event::MousePos(end) => {
                 if let Some(start) = self.dragging_pos {
                     // TODO: This can currently be called multiple times per atom when dragging, so my dragging_pos should be a Option<(usize, usize)> instead.
-                    modify_grid_under_path(&start, end);
+                    {
+                        let start = transform_2d(&start, &self.transform.inverse());
+                        let end = transform_2d(end, &self.transform.inverse());
+                        self.grid.modify_under_path(&start, &end, &editor);
+                    }
                     self.dragging_pos = Some(*end);
                 }
                 false
             }
             Event::LeftClickPressed(pos) => {
-                modify_grid_under_path(pos, pos);
+                {
+                    let pos = transform_2d(&pos, &self.transform.inverse());
+                    self.grid.modify_under_path(&pos, &pos, &editor);
+                }
                 self.dragging_pos = Some(*pos);
                 false
             }

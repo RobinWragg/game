@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
-pub const GRID_SIZE: usize = 32;
+pub const GRID_SIZE: usize = 8;
 
 #[derive(Default, Copy, Clone)]
 pub struct EditorState {
@@ -34,6 +34,22 @@ impl Grid {
     pub fn new() -> Self {
         Self {
             atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
+        }
+    }
+
+    pub fn modify_under_path(&mut self, start: &Vec2, end: &Vec2, editor: &EditorState) {
+        // TODO: I'm not sure when the best time to transform from Vec2 to (usize, usize) is. I think this fn shouldn't be aware of the editor either. The pub interface to the grid can convert Vec2 to (usize, usize) and inspect the editor before getting here.
+        let start = (
+            start.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+            start.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+        );
+        let end = (
+            end.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+            end.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
+        );
+
+        for (x, y) in Grid::atoms_on_path(start, end) {
+            self.atoms[x][y] = editor.current_atom;
         }
     }
 
@@ -128,10 +144,10 @@ impl Grid {
     }
 
     pub fn update(&mut self) {
-        self.update_with_2x2_equilibrium();
+        self.update_gas_with_2x2_equilibrium();
     }
 
-    fn update_with_2x2_equilibrium(&mut self) {
+    fn update_gas_with_2x2_equilibrium(&mut self) {
         debug_assert!(GRID_SIZE % 2 == 0);
 
         let mut reach_local_equilibrium = |x: usize, y: usize| {
