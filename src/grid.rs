@@ -74,7 +74,7 @@ impl Grid {
         println!("Grid saved to nopush/grid_save.json");
     }
 
-    pub fn load() -> Self {
+    pub fn load(&mut self) {
         fn load_inner() -> Result<Vec<Vec<Atom>>, std::io::Error> {
             let mut file = File::open("nopush/grid_save.json")?;
             let mut contents = String::new();
@@ -84,14 +84,12 @@ impl Grid {
 
         match load_inner() {
             Ok(atoms) => {
-                println!("Loading grid from file");
-                let mut grid = Self::new();
-                grid.atoms = atoms;
-                grid
+                println!("Loading atoms from file");
+                self.atoms = atoms;
             }
             Err(_) => {
-                println!("Creating new grid");
-                Self::new()
+                println!("Creating new atoms");
+                self.atoms = vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE];
             }
         }
     }
@@ -154,8 +152,14 @@ impl Grid {
         pressures
     }
 
-    pub fn update(&mut self) {
-        self.update_gas_with_2x2_equilibrium();
+    pub fn update(&mut self, editor: &EditorState) {
+        if editor.should_reload {
+            self.load();
+        }
+
+        if editor.is_playing || editor.should_step {
+            self.update_gas_with_2x2_equilibrium();
+        }
     }
 
     fn update_gas_with_2x2_equilibrium(&mut self) {

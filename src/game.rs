@@ -18,7 +18,7 @@ impl Game {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
-            grid: Grid::load(),
+            grid: Grid::new(),
             events_for_next_frame: VecDeque::new(),
             dragging_pos: None,
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
@@ -50,10 +50,6 @@ impl Game {
     ) {
         self.grid.set_view_aspect_ratio(gpu.aspect_ratio());
 
-        if editor.should_reload {
-            self.grid = Grid::load();
-        }
-
         events.retain(|event| match event {
             Event::MousePos(end) => {
                 if let Some(start) = self.dragging_pos {
@@ -75,10 +71,7 @@ impl Game {
             _ => true,
         });
 
-        if editor.is_playing || editor.should_step {
-            self.grid.update();
-        }
-
+        self.grid.update(&editor);
         self.grid.render(gpu);
     }
 
