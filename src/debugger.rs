@@ -46,7 +46,7 @@ impl Debugger {
                     Vec4::new(1.0, 0.0, 0.0, 1.0),
                     Vec4::new(0.0, 0.0, 1.0, 0.0),
                 ];
-                let mesh = Mesh::new(&positions, Some(&colors), Some((0, &positions)), gpu);
+                let mesh = Mesh::new_2d(&positions, Some(&colors), Some((0, &positions)), gpu);
                 self.mesh = Some(mesh);
                 self.mesh.as_mut().unwrap()
             }
@@ -238,7 +238,7 @@ impl Debugger {
             let gpu_tex_id = *self.egui_to_gpu_tex_id.get(&egui_tex_id).unwrap();
             assert!(gpu_tex_id != 0);
 
-            let mesh = Mesh::new(
+            let mesh = Mesh::new_2d(
                 &vert_positions,
                 Some(&vert_colors),
                 Some((gpu_tex_id, &vert_uvs)),

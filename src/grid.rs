@@ -213,7 +213,7 @@ impl Grid {
             Vec2::new(0.9, 0.9),
         ];
 
-        let mesh = Mesh::new(&verts, None, None, gpu);
+        let mesh = Mesh::new_2d(&verts, None, None, gpu);
 
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {

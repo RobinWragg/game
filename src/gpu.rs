@@ -30,7 +30,7 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new(
-        positions: &[Vec2],
+        positions: &[Vec3],
         vert_colors: Option<&[Vec4]>,
         texture_id_and_uvs: Option<(usize, &[Vec2])>,
         gpu: &Gpu,
@@ -40,8 +40,21 @@ impl Mesh {
         mesh
     }
 
+    pub fn new_2d(
+        positions: &[Vec2],
+        vert_colors: Option<&[Vec4]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
+        gpu: &Gpu,
+    ) -> Self {
+        let mut positions_3d = Vec::with_capacity(positions.len());
+        for pos in positions {
+            positions_3d.push(Vec3::new(pos.x, pos.y, 0.0));
+        }
+        Self::new(&positions_3d, vert_colors, texture_id_and_uvs, gpu)
+    }
+
     fn allocate(vert_count: usize, gpu: &Gpu) -> Self {
-        let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
+        let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 3]>(), &gpu.device);
         let vert_colors =
             Self::create_vertex_buffer(vert_count * size_of::<[f32; 4]>(), &gpu.device);
         let uvs = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
@@ -57,13 +70,13 @@ impl Mesh {
 
     fn write(
         &mut self,
-        positions: &[Vec2],
+        positions: &[Vec3],
         vert_colors: Option<&[Vec4]>,
         texture_id_and_uvs: Option<(usize, &[Vec2])>,
         gpu: &Gpu,
     ) {
         debug_assert_eq!(positions.len(), self.vert_count);
-        Self::write_vec2_slice_to_buffer(&self.positions, positions, &gpu.queue);
+        Self::write_vec3_slice_to_buffer(&self.positions, positions, &gpu.queue);
 
         if let Some(colors) = vert_colors {
             debug_assert_eq!(colors.len(), self.vert_count);
@@ -107,8 +120,18 @@ impl Mesh {
         queue.write_buffer(buffer, 0, bytes);
     }
 
+    fn write_vec3_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec3], queue: &wgpu::Queue) {
+        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 3);
+        for i in 0..slice.len() {
+            let a = slice[i].to_array();
+            floats.extend_from_slice(&a);
+        }
+        let bytes = bytemuck::cast_slice(&floats);
+        queue.write_buffer(buffer, 0, bytes);
+    }
+
     fn write_vec4_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec4], queue: &wgpu::Queue) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
+        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 4);
         for i in 0..slice.len() {
             let a = slice[i].to_array();
             floats.extend_from_slice(&a);
@@ -333,7 +356,7 @@ impl<'a> Gpu<'a> {
             push_constant_ranges: &[],
         });
         let vertpos_layout = wgpu::VertexBufferLayout {
-            array_stride: size_of::<[f32; 2]>() as wgpu::BufferAddress,
+            array_stride: size_of::<[f32; 3]>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
@@ -582,27 +605,5 @@ impl<'a> Gpu<'a> {
 
         self.busy_uniforms.push(uniform);
         self.render_count += 1;
-    }
-
-    pub fn render_textured_quad(&mut self, texture_id: usize, matrix: &Mat4) {
-        let positions = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-        let uvs = vec![
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 1.0),
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 1.0),
-            Vec2::new(1.0, 0.0),
-        ];
-
-        let mesh = Mesh::new(&positions, None, Some((texture_id, &uvs)), &self);
-        self.render_mesh(&mesh, matrix, None);
     }
 }
