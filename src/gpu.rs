@@ -116,6 +116,7 @@ impl Mesh {
             let a = slice[i].to_array();
             floats.extend_from_slice(&a);
         }
+        debug_assert!(floats.len() == slice.len() * 2);
         let bytes = bytemuck::cast_slice(&floats);
         queue.write_buffer(buffer, 0, bytes);
     }
@@ -126,6 +127,7 @@ impl Mesh {
             let a = slice[i].to_array();
             floats.extend_from_slice(&a);
         }
+        debug_assert!(floats.len() == slice.len() * 3);
         let bytes = bytemuck::cast_slice(&floats);
         queue.write_buffer(buffer, 0, bytes);
     }
@@ -136,6 +138,7 @@ impl Mesh {
             let a = slice[i].to_array();
             floats.extend_from_slice(&a);
         }
+        debug_assert!(floats.len() == slice.len() * 4);
         let bytes = bytemuck::cast_slice(&floats);
         queue.write_buffer(buffer, 0, bytes);
     }
@@ -361,7 +364,7 @@ impl<'a> Gpu<'a> {
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
                 shader_location: 0,
-                format: wgpu::VertexFormat::Float32x2,
+                format: wgpu::VertexFormat::Float32x3,
             }],
         };
         let vertcolor_layout = wgpu::VertexBufferLayout {

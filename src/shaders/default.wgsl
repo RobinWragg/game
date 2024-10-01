@@ -20,7 +20,7 @@ var<uniform> uniform: Uniform;
 @vertex
 fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFrag {
     var out: VertToFrag;
-    out.pos = uniform.matrix * vec4<f32>(vert.pos.x, vert.pos.y, 0.0, 1.0);
+    out.pos = uniform.matrix * vec4<f32>(vert.pos.x, vert.pos.y, vert.pos.z, 1.0);
     out.color = vert.color;
     out.uv = vert.uv;
     return out;
