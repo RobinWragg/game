@@ -1,3 +1,29 @@
+fn less_than(a: vec3<f32>, b: vec3<f32>) -> vec3<bool> {
+    return vec3<bool>(a.x < b.x, a.y < b.y, a.z < b.z);
+}
+
+fn bool_to_f32(b: vec3<bool>) -> vec3<f32> {
+    var out = vec3<f32>(0.0, 0.0, 0.0);
+    if b.x { out.x = 1.0; }
+    if b.y { out.y = 1.0; }
+    if b.z { out.z = 1.0; }
+    return out;
+}
+
+fn linear_to_srgb(linear: vec4<f32>) -> vec4<f32> {
+	let cutoff: vec3<f32> = bool_to_f32(less_than(linear.rgb, vec3<f32>(0.0031308)));
+	let higher: vec3<f32> = vec3<f32>(1.055) * pow(linear.rgb, vec3<f32>(1. / 2.4)) - vec3<f32>(0.055);
+	let lower: vec3<f32> = linear.rgb * vec3<f32>(12.92);
+	return vec4<f32>(mix(higher, lower, cutoff), linear.a);
+}
+
+fn srgb_to_linear(sRGB: vec4<f32>) -> vec4<f32> {
+	let cutoff: vec3<f32> = bool_to_f32(less_than(sRGB.rgb, vec3<f32>(0.04045)));
+	let higher: vec3<f32> = pow((sRGB.rgb + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
+	let lower: vec3<f32> = sRGB.rgb / vec3<f32>(12.92);
+	return vec4<f32>(mix(higher, lower, cutoff), sRGB.a);
+}
+
 struct VertInput {
     @location(0) pos: vec3<f32>,
     @location(1) color: vec4<f32>,

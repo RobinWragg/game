@@ -272,6 +272,7 @@ impl<'a> Gpu<'a> {
         let surface_config = surface
             .get_default_config(&adapter, size.width, size.height)
             .unwrap();
+        // TODO: try surface_config.desired_maximum_frame_latency = 1;
         debug_assert_eq!(surface_config.present_mode, wgpu::PresentMode::Fifo);
         surface.configure(&device, &surface_config);
 
