@@ -60,6 +60,11 @@ var texture_sampler: sampler;
 @fragment
 fn fs_main(in: VertToFrag) -> @location(0) vec4<f32> {
     let tex_color = textureSample(texture_view, texture_sampler, in.uv);
-    let vert_color = in.color;
+
+    // TODO: I'm currently using srgb internally and converting to linear on the way out. :/
+    // TODO: Also I might want to move this to the vert shader.
+    let vert_color = srgb_to_linear(in.color);
+
+    // TODO: Should any of these get converted to linear as well?
     return tex_color * vert_color * uniform.color;
 }
