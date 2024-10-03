@@ -251,12 +251,12 @@ impl Grid {
             left_bottom_front,
             left_top_front,
             // Right face
-            left_bottom_front,
-            left_bottom_back,
-            left_top_front,
-            left_top_front,
-            left_bottom_back,
-            left_top_back,
+            right_bottom_front,
+            right_bottom_back,
+            right_top_front,
+            right_top_front,
+            right_bottom_back,
+            right_top_back,
             // Back face
             right_bottom_back,
             left_bottom_back,
