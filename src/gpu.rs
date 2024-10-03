@@ -195,6 +195,7 @@ pub struct Gpu<'a> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
+    depth_texture_view: wgpu::TextureView,
     uniform_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
@@ -322,6 +323,21 @@ impl<'a> Gpu<'a> {
             &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
         );
 
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            label: Some("depth texture"),
+            view_formats: &[],
+        });
+
         let mut gpu = Self {
             width: window.inner_size().width as usize,
             height: window.inner_size().height as usize,
@@ -329,6 +345,7 @@ impl<'a> Gpu<'a> {
             device,
             queue,
             pipeline,
+            depth_texture_view: depth_texture.create_view(&wgpu::TextureViewDescriptor::default()),
             uniform_bindgroup_layout,
             texture_bindgroup_layout,
             textures: vec![],
@@ -414,7 +431,13 @@ impl<'a> Gpu<'a> {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -546,7 +569,14 @@ impl<'a> Gpu<'a> {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             })
