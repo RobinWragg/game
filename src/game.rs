@@ -48,8 +48,6 @@ impl Game {
         editor: EditorState,
         gpu: &mut Gpu,
     ) {
-        self.grid.set_view_aspect_ratio(gpu.aspect_ratio());
-
         events.retain(|event| match event {
             Event::MousePos(end) => {
                 if let Some(start) = self.dragging_pos {

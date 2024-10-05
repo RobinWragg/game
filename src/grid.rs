@@ -33,16 +33,14 @@ pub struct Grid {
 
 impl Grid {
     pub fn new() -> Self {
-        Self {
-            transform: Mat4::IDENTITY,
-            atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
-        }
-    }
-
-    pub fn set_view_aspect_ratio(&mut self, aspect_ratio: f32) {
         let scale = 0.1;
-        self.transform = Mat4::from_translation(Vec3::new(-0.9, -0.9, 0.0))
-            * Mat4::from_scale(Vec3::new(scale / aspect_ratio, scale, 1.0));
+        let translate_z = 0.5; // The viable range is 0 to 1, so put it in the middle.
+        Self {
+            transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
+                * Mat4::from_scale(Vec3::new(scale, scale, scale * 3.0)),
+            atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
+            mover: 0.0,
+        }
     }
 
     pub fn modify_under_path(&mut self, start: &Vec2, end: &Vec2, editor: &EditorState) {

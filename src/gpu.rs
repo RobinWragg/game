@@ -653,8 +653,13 @@ impl<'a> Gpu<'a> {
             Some(c) => c,
             None => Vec4::new(1.0, 1.0, 1.0, 1.0),
         };
-        self.queue
-            .write_buffer(&uniform.buffer, 0, &uniform.as_bytes(matrix, &color));
+        let aspect_ratio_transform =
+            Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
+        self.queue.write_buffer(
+            &uniform.buffer,
+            0,
+            &uniform.as_bytes(&(aspect_ratio_transform * *matrix), &color),
+        );
 
         let mut render_pass = self
             .frame_objects
