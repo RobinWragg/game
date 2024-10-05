@@ -204,6 +204,8 @@ impl Grid {
     }
 
     pub fn render(&mut self, gpu: &mut Gpu) {
+        gpu.depth_test(false);
+
         let verts = vec![
             Vec2::new(0.0, 0.0),
             Vec2::new(0.9, 0.0),
@@ -226,6 +228,8 @@ impl Grid {
                 gpu.render_mesh(&mesh, &(self.transform * m), Some(color));
             }
         }
+
+        gpu.depth_test(true);
 
         let left_bottom_front = Vec3::new(0.0, 0.0, 0.0);
         let right_bottom_front = Vec3::new(1.0, 0.0, 0.0);

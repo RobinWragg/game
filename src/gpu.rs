@@ -190,11 +190,16 @@ impl Uniform {
     }
 }
 
+struct Pipelines {
+    no_depth_test: wgpu::RenderPipeline,
+    depth_test: wgpu::RenderPipeline,
+}
+
 pub struct Gpu<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipeline: wgpu::RenderPipeline,
+    pipelines: Pipelines,
     depth_texture_view: wgpu::TextureView,
     uniform_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
@@ -317,11 +322,24 @@ impl<'a> Gpu<'a> {
                 label: None,
             });
 
-        let pipeline = Self::create_pipeline(
-            &device,
-            &surface_config,
-            &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
-        );
+        let pipelines = {
+            let depth_test = Self::create_pipeline(
+                &device,
+                &surface_config,
+                &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
+                true,
+            );
+            let no_depth_test = Self::create_pipeline(
+                &device,
+                &surface_config,
+                &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
+                false,
+            );
+            Pipelines {
+                depth_test,
+                no_depth_test,
+            }
+        };
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
@@ -344,7 +362,7 @@ impl<'a> Gpu<'a> {
             surface,
             device,
             queue,
-            pipeline,
+            pipelines,
             depth_texture_view: depth_texture.create_view(&wgpu::TextureViewDescriptor::default()),
             uniform_bindgroup_layout,
             texture_bindgroup_layout,
@@ -369,6 +387,7 @@ impl<'a> Gpu<'a> {
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
+        depth_test: bool,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/default.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -434,7 +453,11 @@ impl<'a> Gpu<'a> {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: if depth_test {
+                    wgpu::CompareFunction::Less
+                } else {
+                    wgpu::CompareFunction::Always
+                },
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -547,6 +570,20 @@ impl<'a> Gpu<'a> {
         );
     }
 
+    pub fn depth_test(&mut self, should_test: bool) {
+        self.frame_objects
+            .as_mut()
+            .unwrap()
+            .render_pass
+            .as_mut()
+            .unwrap()
+            .set_pipeline(if should_test {
+                &self.pipelines.depth_test
+            } else {
+                &self.pipelines.no_depth_test
+            });
+    }
+
     pub fn begin_frame(&mut self) {
         let surface_texture = self.surface.get_current_texture().unwrap();
 
@@ -582,7 +619,7 @@ impl<'a> Gpu<'a> {
             })
             .forget_lifetime();
 
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.pipelines.no_depth_test);
 
         self.frame_objects = Some(FrameObjects {
             surface_texture,

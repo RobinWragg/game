@@ -162,6 +162,8 @@ impl Debugger {
     }
 
     pub fn render(&mut self, gpu: &mut Gpu) {
+        gpu.depth_test(false);
+
         if !self.full_output.textures_delta.set.is_empty() {
             assert_eq!(self.full_output.textures_delta.set.len(), 1);
             let (egui_tex_id, delta) = &self.full_output.textures_delta.set[0];
