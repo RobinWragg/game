@@ -33,7 +33,7 @@ pub struct Grid {
 }
 
 impl Grid {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let scale = 0.1;
         let translate_z = 0.5; // The viable range is 0 to 1, so put it in the middle.
         Self {
@@ -42,6 +42,30 @@ impl Grid {
             atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
             mover: 0.0,
         }
+    }
+
+    pub fn load() -> Self {
+        fn load_inner() -> Result<Vec<Vec<Atom>>, std::io::Error> {
+            let mut file = File::open("nopush/grid_save.json")?;
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)?;
+            Ok(serde_json::from_str(&contents)?)
+        }
+
+        let mut grid = Self::new();
+
+        grid.atoms = match load_inner() {
+            Ok(atoms) => {
+                println!("Loading atoms from file");
+                atoms
+            }
+            Err(_) => {
+                println!("Creating new atoms");
+                vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE]
+            }
+        };
+
+        grid
     }
 
     pub fn modify_under_path(&mut self, start: &Vec2, end: &Vec2, editor: &EditorState) {
@@ -71,26 +95,6 @@ impl Grid {
             .expect("Failed to write to file");
 
         println!("Grid saved to nopush/grid_save.json");
-    }
-
-    pub fn load(&mut self) {
-        fn load_inner() -> Result<Vec<Vec<Atom>>, std::io::Error> {
-            let mut file = File::open("nopush/grid_save.json")?;
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)?;
-            Ok(serde_json::from_str(&contents)?)
-        }
-
-        match load_inner() {
-            Ok(atoms) => {
-                println!("Loading atoms from file");
-                self.atoms = atoms;
-            }
-            Err(_) => {
-                println!("Creating new atoms");
-                self.atoms = vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE];
-            }
-        }
     }
 
     pub fn atoms_on_path(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
@@ -153,7 +157,7 @@ impl Grid {
 
     pub fn update(&mut self, editor: &EditorState) {
         if editor.should_reload {
-            self.load();
+            self.atoms = Self::load().atoms;
         }
 
         if editor.is_playing || editor.should_step {

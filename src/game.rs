@@ -18,7 +18,7 @@ impl Game {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
-            grid: Grid::new(),
+            grid: Grid::load(),
             events_for_next_frame: VecDeque::new(),
             dragging_pos: None,
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
