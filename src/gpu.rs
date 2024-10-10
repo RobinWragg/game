@@ -225,6 +225,25 @@ impl<'a> Gpu<'a> {
         self.width() as f32 / self.height() as f32
     }
 
+    pub fn window_to_normalized_transform(&self) -> Mat4 {
+        let width = self.width() as f32;
+        let height = self.height() as f32;
+        let pixels_to_normalized = Mat4::from_scale(Vec3::new(2.0 / height, -2.0 / height, 1.0));
+        let translation = Mat4::from_translation(Vec3::new(-self.aspect_ratio(), 1.0, 0.0));
+        translation * pixels_to_normalized
+    }
+
+    pub fn window_to_normalized(&self, window_pos: &Vec2) -> Vec2 {
+        transform_2d(&window_pos, &self.window_to_normalized_transform())
+    }
+
+    pub fn normalized_to_window(&self, normalized_pos: &Vec2) -> Vec2 {
+        transform_2d(
+            &normalized_pos,
+            &self.window_to_normalized_transform().inverse(),
+        )
+    }
+
     pub fn new(window: &Arc<Window>) -> Gpu<'a> {
         let (surface, adapter) = {
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {

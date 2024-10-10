@@ -103,10 +103,12 @@ impl Debugger {
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
         self.matrix = {
-            let scale = (self.ctx.pixels_per_point() * 2.0) / gpu.height() as f32;
-            let trans_matrix = Mat4::from_translation(Vec3::new(-gpu.aspect_ratio(), 1.0, 0.0));
-            let scale_matrix = Mat4::from_scale(Vec3::new(scale, -scale, 1.0));
-            trans_matrix * scale_matrix
+            gpu.window_to_normalized_transform()
+                * Mat4::from_scale(Vec3::new(
+                    self.ctx.pixels_per_point(),
+                    self.ctx.pixels_per_point(),
+                    1.0,
+                ))
         };
 
         self.full_output = self.ctx.run(std::mem::take(&mut self.input), |ctx| {

@@ -15,7 +15,7 @@ pub enum Event {
     MousePos(Vec2),
 }
 
-pub fn transform_2d(ndc: &Vec2, ndc_to_your_gui: &Mat4) -> Vec2 {
-    let mouse_ndc = Vec4::new(ndc.x, ndc.y, 0.0, 1.0);
-    (*ndc_to_your_gui * mouse_ndc).xy()
+pub fn transform_2d(pos: &Vec2, mat: &Mat4) -> Vec2 {
+    let pos4 = Vec4::new(pos.x, pos.y, 0.0, 1.0);
+    (*mat * pos4).xy()
 }
