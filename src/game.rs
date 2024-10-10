@@ -70,7 +70,8 @@ impl Game {
         });
 
         self.grid.update(&editor);
-        self.grid.render(gpu);
+        self.grid.render_2d(gpu);
+        self.grid.render_ortho(gpu);
     }
 
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {

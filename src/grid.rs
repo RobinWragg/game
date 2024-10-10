@@ -29,6 +29,7 @@ impl Default for Atom {
 pub struct Grid {
     atoms: Vec<Vec<Atom>>,
     transform: Mat4,
+    mover: f32,
 }
 
 impl Grid {
@@ -158,6 +159,8 @@ impl Grid {
         if editor.is_playing || editor.should_step {
             self.update_gas_with_2x2_equilibrium();
         }
+
+        self.mover += 0.05;
     }
 
     fn update_gas_with_2x2_equilibrium(&mut self) {
@@ -201,7 +204,7 @@ impl Grid {
         }
     }
 
-    pub fn render(&mut self, gpu: &mut Gpu) {
+    pub fn render_2d(&self, gpu: &mut Gpu) {
         gpu.depth_test(false);
 
         let verts = vec![
@@ -226,7 +229,9 @@ impl Grid {
                 gpu.render_mesh(&mesh, &(self.transform * m), Some(color));
             }
         }
+    }
 
+    pub fn render_ortho(&self, gpu: &mut Gpu) {
         gpu.depth_test(true);
 
         let left_bottom_front = Vec3::new(0.0, 0.0, 0.0);
@@ -285,6 +290,15 @@ impl Grid {
         cube_verts.iter_mut().for_each(|v| {
             *v -= Vec3::new(0.5, 0.5, 0.5);
         });
+        let mesh = Mesh::new(&cube_verts, None, None, gpu);
+
+        let rotator = {
+            let x = Mat4::from_rotation_x(self.mover);
+            let y = Mat4::from_rotation_y(self.mover * 0.3);
+            x * y
+        };
+
+        gpu.render_mesh(&mesh, &(self.transform * rotator), None);
     }
 }
 

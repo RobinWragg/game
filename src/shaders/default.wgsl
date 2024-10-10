@@ -48,6 +48,12 @@ fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFra
     var out: VertToFrag;
     out.pos = uniform.matrix * vec4<f32>(vert.pos.x, vert.pos.y, vert.pos.z, 1.0);
     out.color = vert.color;
+
+    // Temporary fog-esque effect TODO
+    out.color.x *= 1.0 - out.pos.z;
+    out.color.y *= 1.0 - out.pos.z;
+    out.color.z *= 1.0 - out.pos.z;
+
     out.uv = vert.uv;
     return out;
 }
