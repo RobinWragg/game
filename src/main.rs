@@ -6,6 +6,7 @@ mod debugger;
 mod game;
 mod gpu;
 mod grid;
+mod math;
 mod prelude;
 
 use game::Game;

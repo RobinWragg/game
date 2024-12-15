@@ -14,8 +14,3 @@ pub enum Event {
     LeftClickReleased(Vec2),
     MousePos(Vec2),
 }
-
-pub fn transform_2d(pos: &Vec2, mat: &Mat4) -> Vec2 {
-    let pos4 = Vec4::new(pos.x, pos.y, 0.0, 1.0);
-    (*mat * pos4).xy()
-}

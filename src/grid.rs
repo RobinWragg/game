@@ -1,3 +1,4 @@
+use crate::math::{cube_triangles, transform_2d};
 use crate::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -97,7 +98,7 @@ impl Grid {
         println!("Grid saved to nopush/grid_save.json");
     }
 
-    pub fn atoms_on_path(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
+    fn atoms_on_path(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
         let mut path: Vec<(i32, i32)> = vec![];
 
         let mut mover = (start.0 as i32, start.1 as i32);
@@ -238,58 +239,7 @@ impl Grid {
     pub fn render_ortho(&self, gpu: &mut Gpu) {
         gpu.depth_test(true);
 
-        let left_bottom_front = Vec3::new(0.0, 0.0, 0.0);
-        let right_bottom_front = Vec3::new(1.0, 0.0, 0.0);
-        let left_top_front = Vec3::new(0.0, 1.0, 0.0);
-        let right_top_front = Vec3::new(1.0, 1.0, 0.0);
-        let left_bottom_back = Vec3::new(0.0, 0.0, 1.0);
-        let right_bottom_back = Vec3::new(1.0, 0.0, 1.0);
-        let left_top_back = Vec3::new(0.0, 1.0, 1.0);
-        let right_top_back = Vec3::new(1.0, 1.0, 1.0);
-        let mut cube_verts = vec![
-            // Front face
-            left_bottom_front,
-            right_bottom_front,
-            left_top_front,
-            left_top_front,
-            right_bottom_front,
-            right_top_front,
-            // Left face
-            left_bottom_back,
-            left_bottom_front,
-            left_top_back,
-            left_top_back,
-            left_bottom_front,
-            left_top_front,
-            // Right face
-            right_bottom_front,
-            right_bottom_back,
-            right_top_front,
-            right_top_front,
-            right_bottom_back,
-            right_top_back,
-            // Back face
-            right_bottom_back,
-            left_bottom_back,
-            right_top_back,
-            right_top_back,
-            left_bottom_back,
-            left_top_back,
-            // Top face
-            left_top_front,
-            right_top_front,
-            left_top_back,
-            left_top_back,
-            right_top_front,
-            right_top_back,
-            // Bottom face
-            left_bottom_back,
-            right_bottom_back,
-            left_bottom_front,
-            left_bottom_front,
-            right_bottom_back,
-            right_bottom_front,
-        ];
+        let mut cube_verts = cube_triangles();
 
         cube_verts.iter_mut().for_each(|v| {
             *v -= Vec3::new(0.5, 0.5, 0.5);
