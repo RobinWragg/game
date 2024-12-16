@@ -5,7 +5,7 @@ pub fn transform_2d(pos: &Vec2, mat: &Mat4) -> Vec2 {
     (*mat * pos4).xy()
 }
 
-fn moller_trumbore_intersection(
+fn ray_triangle_intersection(
     origin: Vec3,
     direction: Vec3,
     t_a: Vec3,
@@ -102,53 +102,71 @@ pub fn cube_triangles() -> Vec<Vec3> {
     ]
 }
 
-fn intersect_grid(cube_size: i32, ray_origin: Vec3, ray_direction: Vec3) -> Vec<(i32, i32, i32)> {
-    // TODO: Return all intersections, not just one or zero.
-    // TODO: Sort intersected cubes by their position on the ray.
-    let triangle_verts = cube_triangles();
-    for x in 0..cube_size {
-        for y in 0..cube_size {
-            for z in 0..cube_size {
-                let cube_origin = Vec3::new(x as f32, y as f32, z as f32);
-                let transformed_ray_origin = ray_origin - cube_origin;
+// fn intersect_grid_1d(cube_size: i32, ray_start: f32, ray_end: f32) -> Vec<i32> {
+// }
 
-                for i in (0..triangle_verts.len()).step_by(3) {
-                    let a = triangle_verts[i];
-                    let b = triangle_verts[i + 1];
-                    let c = triangle_verts[i + 2];
-                    if let Some(intersection) =
-                        moller_trumbore_intersection(transformed_ray_origin, ray_direction, a, b, c)
-                    {
-                        return vec![(x, y, z)];
-                    }
-                }
-            }
+#[derive(PartialEq)]
+enum CheckFace {
+    Front,
+    Back,
+    Both,
+}
+
+fn plane_ray_intersection(
+    plane_normal: Vec3,
+    plane_point: Vec3,
+    ray_origin: Vec3,
+    ray_direction: Vec3,
+    check_face: CheckFace,
+) -> Option<Vec3> {
+    let epsilon = 0.0001;
+    let denom = plane_normal.dot(ray_direction);
+    if (check_face == CheckFace::Front && denom < epsilon)
+        || (check_face == CheckFace::Back && denom > epsilon)
+        || (check_face == CheckFace::Both && denom.abs() > epsilon)
+    {
+        let v = plane_point - ray_origin;
+        let t = v.dot(plane_normal) / denom;
+        if t >= 0.0 {
+            return Some(ray_origin + ray_direction * t);
         }
     }
-    return [].to_vec();
+    return None;
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test_intersect_grid_1_true() {
-        use super::*;
-        let origin = Vec3::new(1.5, 0.5, -1.0);
+    fn test_plane_ray_intersection() {
+        let r_origin = Vec3::new(1.5, 0.5, -1.0);
         let target = Vec3::new(0.0, 0.5, 1.0);
-        let direction = (target - origin).normalize();
+        let r_dir = (target - r_origin).normalize();
 
-        let results = intersect_grid(1, origin, direction);
-        assert_eq!(results, vec![(0, 0, 0)]);
-    }
+        let p_point = Vec3::new(0.0, 0.0, 10.0);
+        let mut p_norm = Vec3::new(0.0, 0.0, 0.9).normalize();
 
-    #[test]
-    fn test_intersect_grid_1_false() {
-        use super::*;
-        let origin = Vec3::new(1.5, 0.5, -1.0);
-        let target = Vec3::new(2.0, 0.5, 1.0);
-        let direction = (target - origin).normalize();
+        let i = plane_ray_intersection(p_norm, p_point, r_origin, r_dir, CheckFace::Back);
+        dbg!(i);
+        assert!(i.is_some());
+        let i = plane_ray_intersection(p_norm, p_point, r_origin, r_dir, CheckFace::Both);
+        dbg!(i);
+        assert!(i.is_some());
+        let i = plane_ray_intersection(p_norm, p_point, r_origin, r_dir, CheckFace::Front);
+        dbg!(i);
+        assert!(i.is_none());
 
-        let results = intersect_grid(1, origin, direction);
-        assert_eq!(results, vec![]);
+        p_norm.z *= -1.0;
+
+        let i = plane_ray_intersection(p_norm, p_point, r_origin, r_dir, CheckFace::Back);
+        dbg!(i);
+        assert!(i.is_none());
+        let i = plane_ray_intersection(p_norm, p_point, r_origin, r_dir, CheckFace::Both);
+        dbg!(i);
+        assert!(i.is_some());
+        let i = plane_ray_intersection(p_norm, p_point, r_origin, r_dir, CheckFace::Front);
+        dbg!(i);
+        assert!(i.is_some());
     }
 }
