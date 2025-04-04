@@ -54,6 +54,19 @@ fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFra
     out.color.y *= 1.0 - out.pos.z;
     out.color.z *= 1.0 - out.pos.z;
 
+    // Warn about out of Z bounds.
+    if out.pos.z < 0.0 {
+        out.color.x  = 1.0;
+        out.color.y  = 0.0;
+        out.color.z  = 0.0;
+        out.pos.z = 0.001;
+    } else if out.pos.z > 1.0 {
+        out.color.x  = 0.0;
+        out.color.y  = 0.0;
+        out.color.z  = 1.0;
+        out.pos.z = 0.001;
+    }
+
     out.uv = vert.uv;
     return out;
 }
