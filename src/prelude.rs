@@ -12,5 +12,7 @@ pub use std::time::{Duration, Instant};
 pub enum Event {
     LeftClickPressed(Vec2),
     LeftClickReleased(Vec2),
+    RightClickPressed(Vec2),
+    RightClickReleased(Vec2),
     MousePos(Vec2),
 }

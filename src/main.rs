@@ -94,6 +94,17 @@ impl ApplicationHandler for App<'_> {
                             game.push_event(Event::LeftClickReleased(normalized_coords));
                         }
                     }
+                } else if button == MouseButton::Right {
+                    match state {
+                        ElementState::Pressed => {
+                            let normalized_coords = gpu.window_to_normalized(&self.mouse_pos);
+                            game.push_event(Event::RightClickPressed(normalized_coords));
+                        }
+                        ElementState::Released => {
+                            let normalized_coords = gpu.window_to_normalized(&self.mouse_pos);
+                            game.push_event(Event::RightClickReleased(normalized_coords));
+                        }
+                    }
                 }
             }
             WindowEvent::CloseRequested => event_loop.exit(), // TODO: call this when doing cmd+Q etc
