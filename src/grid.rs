@@ -39,7 +39,7 @@ impl Grid {
         let translate_z = 0.5; // The viable range is 0 to 1, so put it in the middle.
         Self {
             transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
-                * Mat4::from_scale(Vec3::new(scale, scale, scale * 3.0)),
+                * Mat4::from_scale(Vec3::new(scale, scale, scale)),
             atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
             mover: 0.0,
         }
@@ -165,7 +165,7 @@ impl Grid {
             self.update_gas_with_2x2_equilibrium();
         }
 
-        self.mover += 0.05;
+        self.mover += 0.01;
     }
 
     fn update_gas_with_2x2_equilibrium(&mut self) {
@@ -241,9 +241,6 @@ impl Grid {
 
         let mut cube_verts = cube_triangles();
 
-        cube_verts.iter_mut().for_each(|v| {
-            *v -= Vec3::new(0.5, 0.5, 0.5);
-        });
         let mesh = Mesh::new(&cube_verts, None, None, gpu);
 
         let rotator = {
@@ -252,7 +249,21 @@ impl Grid {
             x * y
         };
 
-        gpu.render_mesh(&mesh, &(self.transform * rotator), None);
+        let half_trans = Mat4::from_translation(Vec3::new(0.5, 0.5, 0.5));
+        let shrink = half_trans * Mat4::from_scale(Vec3::new(0.7, 0.7, 0.7)) * half_trans.inverse();
+
+        // origin indicator
+        gpu.render_mesh(&mesh, &self.transform, Some(Vec4::new(0.0, 1.0, 0.0, 1.0)));
+
+        for x in 0..GRID_SIZE {
+            for y in 0..GRID_SIZE {
+                for z in 0..GRID_SIZE {
+                    let f = Vec3::new(x as f32, y as f32, z as f32) - GRID_SIZE as f32 / 2.0;
+                    let trans = Mat4::from_translation(f);
+                    gpu.render_mesh(&mesh, &(self.transform * rotator * trans * shrink), None);
+                }
+            }
+        }
     }
 }
 
