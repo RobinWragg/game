@@ -7,6 +7,7 @@ pub struct Game {
     launch_time: Instant,
     prev_frame_start_time: Instant,
     grid: Grid,
+    grid_viewer: Viewer,
     events_for_next_frame: VecDeque<Event>,
     dragging_pos: Option<Vec2>,
     previous_mouse_pos_for_deduplication: Vec2,
@@ -19,6 +20,7 @@ impl Game {
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
             grid: Grid::load(),
+            grid_viewer: Viewer::new(),
             events_for_next_frame: VecDeque::new(),
             dragging_pos: None,
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
@@ -70,8 +72,9 @@ impl Game {
         });
 
         self.grid.update(&editor);
+        self.grid_viewer.update(&editor);
         self.grid.render_2d(gpu);
-        self.grid.render_ortho(gpu);
+        self.grid_viewer.render_ortho(gpu);
     }
 
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {

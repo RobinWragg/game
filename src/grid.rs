@@ -235,6 +235,27 @@ impl Grid {
             }
         }
     }
+}
+
+pub struct Viewer {
+    mover_todo: f32,
+    transform: Mat4,
+}
+
+impl Viewer {
+    pub fn new() -> Self {
+        let scale = 0.1;
+        let translate_z = 0.5; // The viable range is 0 to 1, so put it in the middle.
+        Self {
+            transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
+                * Mat4::from_scale(Vec3::new(scale, scale, scale)),
+            mover_todo: 0.0,
+        }
+    }
+
+    pub fn update(&mut self, editor: &EditorState) {
+        self.mover_todo += 0.01;
+    }
 
     pub fn render_ortho(&self, gpu: &mut Gpu) {
         gpu.depth_test(true);
@@ -244,8 +265,8 @@ impl Grid {
         let mesh = Mesh::new(&cube_verts, None, None, gpu);
 
         let rotator = {
-            let x = Mat4::from_rotation_x(self.mover);
-            let y = Mat4::from_rotation_y(self.mover * 0.3);
+            let x = Mat4::from_rotation_x(self.mover_todo);
+            let y = Mat4::from_rotation_y(self.mover_todo * 0.3);
             x * y
         };
 
