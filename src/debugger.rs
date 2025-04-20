@@ -76,6 +76,8 @@ impl Debugger {
                         pressed: true,
                         modifiers: egui::Modifiers::default(),
                     });
+                    // Remove pointer events (return false) if the egui context wants them.
+                    !self.ctx.wants_pointer_input()
                 }
                 Event::LeftClickReleased(pos) => {
                     let mouse_egui = transform_2d(pos, &self.matrix.inverse());
@@ -86,6 +88,8 @@ impl Debugger {
                         pressed: false,
                         modifiers: egui::Modifiers::default(),
                     });
+                    // Remove pointer events (return false) if the egui context wants them.
+                    !self.ctx.wants_pointer_input()
                 }
                 Event::MousePos(pos) => {
                     let mouse_egui = transform_2d(pos, &self.matrix.inverse());
@@ -93,12 +97,11 @@ impl Debugger {
                     self.input
                         .events
                         .push(egui::Event::PointerMoved(mouse_egui));
+                    // Remove pointer events (return false) if the egui context wants them.
+                    !self.ctx.wants_pointer_input()
                 }
-                _ => (),
+                _ => true,
             }
-
-            // Remove pointer events (return false) if the egui context wants them.
-            !self.ctx.wants_pointer_input()
         });
 
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
