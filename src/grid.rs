@@ -238,8 +238,6 @@ impl Grid {
 }
 
 pub struct Viewer {
-    mover_todo: f32,
-    transform: Mat4,
     global_transform: Mat4,
     raw_mouse_pos: Vec2,
     selected_cubes: Vec<IVec3>,
@@ -248,13 +246,8 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn new() -> Self {
-        let scale = 0.1;
-        let translate_z = 0.5; // The viable range is 0 to 1, so put it in the middle.
         Self {
-            transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
-                * Mat4::from_scale(Vec3::new(scale, scale, scale)),
             global_transform: Mat4::IDENTITY,
-            mover_todo: 0.0,
             raw_mouse_pos: Vec2::splat(0.0),
             selected_cubes: vec![],
             show_unselected_cubes: true,
@@ -262,42 +255,50 @@ impl Viewer {
     }
 
     pub fn update(&mut self, events: &mut VecDeque<Event>) {
+        let mut t = 0.0f64;
+
         events.retain(|event| match event {
             Event::MousePos(p) => {
                 self.raw_mouse_pos = *p;
                 true
             }
-            Event::TotalTime(t) => {
-                let t_ms = (t * 1000.0) as i64;
-                self.show_unselected_cubes = t_ms % 1000 < 500;
+            Event::TotalTime(tt) => {
+                t = *tt;
                 true
             }
-
             _ => true,
         });
 
-        self.mover_todo += 0.01;
-
-        let rotator = {
-            let x = Mat4::from_rotation_x(self.mover_todo);
-            let y = Mat4::from_rotation_y(self.mover_todo * 0.3);
-            x * y
+        self.show_unselected_cubes = {
+            let t_ms = (t * 1000.0) as i64;
+            t_ms % 1000 < 500
         };
 
-        // transforms
-        let translate = Mat4::from_translation(Vec3::splat(GRID_SIZE as f32 / -2.0));
-        self.global_transform = self.transform * rotator * translate;
+        self.global_transform = {
+            let arbitrary_rotate = {
+                let x = Mat4::from_rotation_x(t as f32);
+                let y = Mat4::from_rotation_y(t as f32 * 0.3);
+                x * y
+            };
+            let arbitrary_scale = Mat4::from_scale(Vec3::splat(0.1));
+            // The viable Z range is 0 to 1, so put it in the middle.
+            let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
+            let centering_translation =
+                Mat4::from_translation(Vec3::splat(GRID_SIZE as f32 / -2.0));
+            translate_z * arbitrary_scale * arbitrary_rotate * centering_translation
+        };
 
-        // ray
-        let global_transform_inv = self.global_transform.inverse();
-        let ray_origin = (global_transform_inv
-            * Vec4::new(self.raw_mouse_pos.x, self.raw_mouse_pos.y, 0.0, 1.0))
-        .xyz();
-        let ray_direction = (global_transform_inv * Vec4::new(0.0, 0.0, 1.0, 0.0))
-            .xyz()
-            .normalize();
+        self.selected_cubes = {
+            let global_transform_inv = self.global_transform.inverse();
+            let ray_origin = (global_transform_inv
+                * Vec4::new(self.raw_mouse_pos.x, self.raw_mouse_pos.y, 0.0, 1.0))
+            .xyz();
+            let ray_direction = (global_transform_inv * Vec4::new(0.0, 0.0, 1.0, 0.0))
+                .xyz()
+                .normalize();
 
-        self.selected_cubes = ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction);
+            ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction)
+        };
     }
 
     pub fn render_ortho(&self, gpu: &mut Gpu) {
