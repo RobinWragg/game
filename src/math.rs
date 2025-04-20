@@ -47,6 +47,14 @@ fn ray_triangle_intersection(
     }
 }
 
+pub fn unit_triangle() -> Vec<Vec3> {
+    vec![
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+    ]
+}
+
 pub fn cube_triangles() -> Vec<Vec3> {
     let left_bottom_front = Vec3::new(0.0, 0.0, 0.0);
     let right_bottom_front = Vec3::new(1.0, 0.0, 0.0);
@@ -132,6 +140,50 @@ fn plane_ray_intersection(
         }
     }
     return None;
+}
+
+fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: Vec3) -> Option<Vec3> {
+    let inv_dir = ray_dir.recip();
+
+    let min = cube_corner;
+    let max = cube_corner + Vec3::splat(1.0);
+
+    let t1 = (min - ray_origin) * inv_dir;
+    let t2 = (max - ray_origin) * inv_dir;
+
+    let tmin = t1.min(t2);
+    let tmax = t1.max(t2);
+
+    let t_enter = tmin.max_element();
+    let t_exit = tmax.min_element();
+
+    if t_exit >= t_enter && t_exit >= 0.0 {
+        let t_hit = t_enter.max(0.0); // Clamp to zero if ray starts inside the cube
+        Some(ray_origin + ray_dir * t_hit)
+    } else {
+        None
+    }
+}
+
+pub fn ray_grid_intersections(
+    grid_size: usize,
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+) -> Vec<(usize, usize, usize)> {
+    let mut intersections = vec![];
+
+    for x in 0..grid_size {
+        for y in 0..grid_size {
+            for z in 0..grid_size {
+                let cube_corner = Vec3::new(x as f32, y as f32, z as f32);
+                if let Some(_) = ray_unitcube_intersection(ray_origin, ray_dir, cube_corner) {
+                    intersections.push((x, y, z));
+                }
+            }
+        }
+    }
+
+    intersections
 }
 
 #[cfg(test)]

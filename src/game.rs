@@ -72,9 +72,7 @@ impl Game {
         });
 
         self.grid.update(&editor);
-        self.grid_viewer.update(&editor);
         self.grid.render_2d(gpu);
-        self.grid_viewer.render_ortho(gpu);
     }
 
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {
@@ -85,10 +83,14 @@ impl Game {
         let total_time = (frame_start_time - self.launch_time).as_secs_f64();
 
         let mut events = std::mem::take(&mut self.events_for_next_frame);
+        events.push_back(Event::TotalTime(total_time));
 
         self.debugger.update(&mut events, delta_time, gpu);
 
-        self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
+        // self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
+
+        self.grid_viewer.update(&mut events);
+        self.grid_viewer.render_ortho(gpu);
 
         self.debugger.render(gpu);
         gpu.finish_frame();

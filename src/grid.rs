@@ -1,10 +1,10 @@
-use crate::math::{cube_triangles, transform_2d};
+use crate::math::{cube_triangles, ray_grid_intersections, transform_2d, unit_triangle};
 use crate::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
-pub const GRID_SIZE: usize = 8;
+pub const GRID_SIZE: usize = 4;
 
 #[derive(Default, Copy, Clone)]
 pub struct EditorState {
@@ -240,6 +240,8 @@ impl Grid {
 pub struct Viewer {
     mover_todo: f32,
     transform: Mat4,
+    raw_mouse_pos: Vec2,
+    show_unselected_cubes: bool,
 }
 
 impl Viewer {
@@ -250,11 +252,28 @@ impl Viewer {
             transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
                 * Mat4::from_scale(Vec3::new(scale, scale, scale)),
             mover_todo: 0.0,
+            raw_mouse_pos: Vec2::splat(0.0),
+            show_unselected_cubes: true,
         }
     }
 
-    pub fn update(&mut self, editor: &EditorState) {
+    pub fn update(&mut self, events: &mut VecDeque<Event>) {
+        events.retain(|event| match event {
+            Event::MousePos(p) => {
+                self.raw_mouse_pos = *p;
+                true
+            }
+            Event::TotalTime(t) => {
+                let t_ms = (t * 1000.0) as i64;
+                self.show_unselected_cubes = t_ms % 1000 < 500;
+                true
+            }
+
+            _ => true,
+        });
+
         self.mover_todo += 0.01;
+        // self.mover_todo = 2.0;
     }
 
     pub fn render_ortho(&self, gpu: &mut Gpu) {
@@ -271,17 +290,39 @@ impl Viewer {
         };
 
         let half_trans = Mat4::from_translation(Vec3::new(0.5, 0.5, 0.5));
-        let shrink = half_trans * Mat4::from_scale(Vec3::new(0.7, 0.7, 0.7)) * half_trans.inverse();
+        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.9)) * half_trans.inverse();
 
-        // origin indicator
-        gpu.render_mesh(&mesh, &self.transform, Some(Vec4::new(0.0, 1.0, 0.0, 1.0)));
+        let global_trans = Mat4::from_translation(Vec3::splat(GRID_SIZE as f32 / -2.0));
+        let grid_transform = self.transform * rotator * global_trans;
 
+        // ray
+        let ray_origin = (grid_transform.inverse()
+            * Vec4::new(self.raw_mouse_pos.x, self.raw_mouse_pos.y, 0.0, 1.0))
+        .xyz();
+        let ray_direction = (grid_transform.inverse() * Vec4::new(0.0, 0.0, 1.0, 0.0))
+            .xyz()
+            .normalize();
+
+        let intersections = &ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction);
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
                 for z in 0..GRID_SIZE {
-                    let f = Vec3::new(x as f32, y as f32, z as f32) - GRID_SIZE as f32 / 2.0;
-                    let trans = Mat4::from_translation(f);
-                    gpu.render_mesh(&mesh, &(self.transform * rotator * trans * shrink), None);
+                    let local_translation =
+                        Mat4::from_translation(Vec3::new(x as f32, y as f32, z as f32));
+                    let cube_transform = grid_transform * local_translation * shrink;
+
+                    if let Some(_) = intersections
+                        .into_iter()
+                        .find(|e| e.0 == x && e.1 == y && e.2 == z)
+                    {
+                        gpu.render_mesh(
+                            &mesh,
+                            &cube_transform,
+                            Some(Vec4::new(0.0, 1.0, 0.0, 1.0)),
+                        );
+                    } else if self.show_unselected_cubes {
+                        gpu.render_mesh(&mesh, &cube_transform, None);
+                    }
                 }
             }
         }
