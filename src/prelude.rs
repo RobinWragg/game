@@ -2,6 +2,7 @@ pub use crate::debugger::Debugger;
 pub use crate::gpu::{Gpu, Mesh};
 pub use glam::{
     f32::{Mat4, Vec2, Vec3, Vec4},
+    usize::USizeVec3,
     Vec2Swizzles, Vec3Swizzles, Vec4Swizzles,
 };
 pub use rand::prelude::*;
@@ -17,3 +18,5 @@ pub enum Event {
     RightClickReleased(Vec2),
     MousePos(Vec2),
 }
+
+pub type IVec3 = USizeVec3;

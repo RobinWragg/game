@@ -240,7 +240,9 @@ impl Grid {
 pub struct Viewer {
     mover_todo: f32,
     transform: Mat4,
+    global_transform: Mat4,
     raw_mouse_pos: Vec2,
+    selected_cubes: Vec<IVec3>,
     show_unselected_cubes: bool,
 }
 
@@ -251,8 +253,10 @@ impl Viewer {
         Self {
             transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
                 * Mat4::from_scale(Vec3::new(scale, scale, scale)),
+            global_transform: Mat4::IDENTITY,
             mover_todo: 0.0,
             raw_mouse_pos: Vec2::splat(0.0),
+            selected_cubes: vec![],
             show_unselected_cubes: true,
         }
     }
@@ -273,7 +277,27 @@ impl Viewer {
         });
 
         self.mover_todo += 0.01;
-        // self.mover_todo = 2.0;
+
+        let rotator = {
+            let x = Mat4::from_rotation_x(self.mover_todo);
+            let y = Mat4::from_rotation_y(self.mover_todo * 0.3);
+            x * y
+        };
+
+        // transforms
+        let translate = Mat4::from_translation(Vec3::splat(GRID_SIZE as f32 / -2.0));
+        self.global_transform = self.transform * rotator * translate;
+
+        // ray
+        let global_transform_inv = self.global_transform.inverse();
+        let ray_origin = (global_transform_inv
+            * Vec4::new(self.raw_mouse_pos.x, self.raw_mouse_pos.y, 0.0, 1.0))
+        .xyz();
+        let ray_direction = (global_transform_inv * Vec4::new(0.0, 0.0, 1.0, 0.0))
+            .xyz()
+            .normalize();
+
+        self.selected_cubes = ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction);
     }
 
     pub fn render_ortho(&self, gpu: &mut Gpu) {
@@ -283,38 +307,18 @@ impl Viewer {
 
         let mesh = Mesh::new(&cube_verts, None, None, gpu);
 
-        let rotator = {
-            let x = Mat4::from_rotation_x(self.mover_todo);
-            let y = Mat4::from_rotation_y(self.mover_todo * 0.3);
-            x * y
-        };
-
         let half_trans = Mat4::from_translation(Vec3::new(0.5, 0.5, 0.5));
         let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.9)) * half_trans.inverse();
 
-        let global_trans = Mat4::from_translation(Vec3::splat(GRID_SIZE as f32 / -2.0));
-        let grid_transform = self.transform * rotator * global_trans;
-
-        // ray
-        let ray_origin = (grid_transform.inverse()
-            * Vec4::new(self.raw_mouse_pos.x, self.raw_mouse_pos.y, 0.0, 1.0))
-        .xyz();
-        let ray_direction = (grid_transform.inverse() * Vec4::new(0.0, 0.0, 1.0, 0.0))
-            .xyz()
-            .normalize();
-
-        let intersections = &ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction);
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
                 for z in 0..GRID_SIZE {
-                    let local_translation =
-                        Mat4::from_translation(Vec3::new(x as f32, y as f32, z as f32));
-                    let cube_transform = grid_transform * local_translation * shrink;
+                    let cube_pos = IVec3::new(x, y, z);
 
-                    if let Some(_) = intersections
-                        .into_iter()
-                        .find(|e| e.0 == x && e.1 == y && e.2 == z)
-                    {
+                    let local_translation = Mat4::from_translation(cube_pos.as_vec3());
+                    let cube_transform = self.global_transform * local_translation * shrink;
+
+                    if let Some(_) = self.selected_cubes.iter().find(|s| cube_pos == **s) {
                         gpu.render_mesh(
                             &mesh,
                             &cube_transform,

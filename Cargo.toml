@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 bytemuck = "1.17.0"
 egui = "0.28.1"
-glam = "0.29.0"
+glam = "0.30.2"
 pollster = "0.3.0"
 rand = "0.8.5"
 serde = { version = "1.0.210", features = ["derive"] }

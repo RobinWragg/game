@@ -165,11 +165,7 @@ fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: Vec3)
     }
 }
 
-pub fn ray_grid_intersections(
-    grid_size: usize,
-    ray_origin: Vec3,
-    ray_dir: Vec3,
-) -> Vec<(usize, usize, usize)> {
+pub fn ray_grid_intersections(grid_size: usize, ray_origin: Vec3, ray_dir: Vec3) -> Vec<IVec3> {
     let mut intersections = vec![];
 
     for x in 0..grid_size {
@@ -177,7 +173,7 @@ pub fn ray_grid_intersections(
             for z in 0..grid_size {
                 let cube_corner = Vec3::new(x as f32, y as f32, z as f32);
                 if let Some(_) = ray_unitcube_intersection(ray_origin, ray_dir, cube_corner) {
-                    intersections.push((x, y, z));
+                    intersections.push(IVec3::new(x, y, z));
                 }
             }
         }
