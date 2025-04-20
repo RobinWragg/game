@@ -254,16 +254,10 @@ impl Viewer {
         }
     }
 
-    pub fn update(&mut self, events: &mut VecDeque<Event>) {
-        let mut t = 0.0f64;
-
+    pub fn update(&mut self, t: f64, events: &mut VecDeque<Event>) {
         events.retain(|event| match event {
             Event::MousePos(p) => {
                 self.raw_mouse_pos = *p;
-                true
-            }
-            Event::TotalTime(tt) => {
-                t = *tt;
                 true
             }
             _ => true,

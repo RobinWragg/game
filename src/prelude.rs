@@ -11,7 +11,6 @@ pub use std::f32::consts::SQRT_2;
 pub use std::time::{Duration, Instant};
 
 pub enum Event {
-    TotalTime(f64),
     LeftClickPressed(Vec2),
     LeftClickReleased(Vec2),
     RightClickPressed(Vec2),
