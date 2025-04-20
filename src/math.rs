@@ -165,7 +165,11 @@ fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: Vec3)
     }
 }
 
-pub fn ray_grid_intersections(grid_size: usize, ray_origin: Vec3, ray_dir: Vec3) -> Vec<IVec3> {
+pub fn sorted_ray_grid_intersections(
+    grid_size: usize,
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+) -> Vec<IVec3> {
     let mut intersections = vec![];
 
     for x in 0..grid_size {
@@ -179,6 +183,14 @@ pub fn ray_grid_intersections(grid_size: usize, ray_origin: Vec3, ray_dir: Vec3)
         }
     }
 
+    let half = Vec3::splat(0.5);
+    let sorter = |a: &IVec3, b: &IVec3| {
+        let a_dist = ray_origin.distance(a.as_vec3() + half);
+        let b_dist = ray_origin.distance(b.as_vec3() + half);
+        a_dist.partial_cmp(&b_dist).unwrap()
+    };
+
+    intersections.sort_by(sorter);
     intersections
 }
 

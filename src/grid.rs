@@ -1,4 +1,4 @@
-use crate::math::{cube_triangles, ray_grid_intersections, transform_2d, unit_triangle};
+use crate::math::{cube_triangles, sorted_ray_grid_intersections, transform_2d, unit_triangle};
 use crate::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -274,7 +274,7 @@ impl Viewer {
                 let y = Mat4::from_rotation_y(t as f32 * 0.3);
                 x * y
             };
-            let arbitrary_scale = Mat4::from_scale(Vec3::splat(0.1));
+            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.2, 0.2, 0.1));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
             let centering_translation =
@@ -291,7 +291,7 @@ impl Viewer {
                 .xyz()
                 .normalize();
 
-            ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction)
+            sorted_ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction)
         };
     }
 
@@ -313,12 +313,14 @@ impl Viewer {
                     let local_translation = Mat4::from_translation(cube_pos.as_vec3());
                     let cube_transform = self.global_transform * local_translation * shrink;
 
-                    if let Some(_) = self.selected_cubes.iter().find(|s| cube_pos == **s) {
-                        gpu.render_mesh(
-                            &mesh,
-                            &cube_transform,
-                            Some(Vec4::new(0.0, 1.0, 0.0, 1.0)),
-                        );
+                    if let Some(c) = self.selected_cubes.iter().find(|s| cube_pos == **s) {
+                        let color = if self.selected_cubes[0] == *c {
+                            Vec4::new(0.0, 1.0, 0.0, 1.0)
+                        } else {
+                            Vec4::new(0.0, 0.0, 1.0, 1.0)
+                        };
+
+                        gpu.render_mesh(&mesh, &cube_transform, Some(color));
                     } else if self.show_unselected_cubes {
                         gpu.render_mesh(&mesh, &cube_transform, None);
                     }
