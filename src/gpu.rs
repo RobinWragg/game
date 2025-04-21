@@ -24,6 +24,7 @@ struct FrameObjects {
 pub struct Mesh {
     vert_count: usize,
     positions: wgpu::Buffer,
+    normals: wgpu::Buffer,
     vert_colors: wgpu::Buffer,
     uvs: wgpu::Buffer,
     pub texture: usize, // TODO: this pub is smelly.
@@ -56,6 +57,7 @@ impl Mesh {
 
     fn allocate(vert_count: usize, gpu: &Gpu) -> Self {
         let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 3]>(), &gpu.device);
+        let normals = Self::create_vertex_buffer(vert_count * size_of::<[f32; 3]>(), &gpu.device);
         let vert_colors =
             Self::create_vertex_buffer(vert_count * size_of::<[f32; 4]>(), &gpu.device);
         let uvs = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
@@ -63,6 +65,7 @@ impl Mesh {
         Self {
             vert_count,
             positions,
+            normals,
             vert_colors,
             uvs,
             texture: 0,
@@ -78,6 +81,20 @@ impl Mesh {
     ) {
         debug_assert_eq!(positions.len(), self.vert_count);
         Self::write_vec3_slice_to_buffer(&self.positions, positions, &gpu.queue);
+
+        // Default normals for each triangle
+        let mut normals = vec![Vec3::ZERO; self.vert_count];
+        for i in (0..positions.len()).step_by(3) {
+            let v0 = positions[i];
+            let v1 = positions[i + 1];
+            let v2 = positions[i + 2];
+            let normal = (v1 - v0).cross(v2 - v0).normalize();
+
+            normals[i] = normal;
+            normals[i + 1] = normal;
+            normals[i + 2] = normal;
+        }
+        Self::write_vec3_slice_to_buffer(&self.normals, &normals, &gpu.queue);
 
         if let Some(colors) = vert_colors {
             debug_assert_eq!(colors.len(), self.vert_count);
