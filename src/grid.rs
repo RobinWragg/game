@@ -241,7 +241,6 @@ pub struct Viewer {
     global_transform: Mat4,
     raw_mouse_pos: Vec2,
     selected_cubes: Vec<IVec3>,
-    show_unselected_cubes: bool,
 }
 
 impl Viewer {
@@ -250,7 +249,6 @@ impl Viewer {
             global_transform: Mat4::IDENTITY,
             raw_mouse_pos: Vec2::splat(0.0),
             selected_cubes: vec![],
-            show_unselected_cubes: true,
         }
     }
 
@@ -263,15 +261,10 @@ impl Viewer {
             _ => true,
         });
 
-        self.show_unselected_cubes = {
-            let t_ms = (t * 1000.0) as i64;
-            t_ms % 1000 < 500
-        };
-
         self.global_transform = {
             let arbitrary_rotate = {
-                let x = Mat4::from_rotation_x(t as f32);
-                let y = Mat4::from_rotation_y(t as f32 * 0.3);
+                let x = Mat4::from_rotation_x(t as f32 * 0.2);
+                let y = Mat4::from_rotation_y(t as f32 * 0.12345);
                 x * y
             };
             let arbitrary_scale = Mat4::from_scale(Vec3::new(0.2, 0.2, 0.1));
@@ -303,7 +296,7 @@ impl Viewer {
         let mesh = Mesh::new(&cube_verts, None, None, gpu);
 
         let half_trans = Mat4::from_translation(Vec3::new(0.5, 0.5, 0.5));
-        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.9)) * half_trans.inverse();
+        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.8)) * half_trans.inverse();
 
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
@@ -321,7 +314,7 @@ impl Viewer {
                         };
 
                         gpu.render_mesh(&mesh, &cube_transform, Some(color));
-                    } else if self.show_unselected_cubes {
+                    } else {
                         gpu.render_mesh(&mesh, &cube_transform, None);
                     }
                 }

@@ -365,11 +365,13 @@ impl<'a> Gpu<'a> {
                 &surface_config,
                 &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
                 true,
+                true,
             );
             let no_depth_test = Self::create_pipeline(
                 &device,
                 &surface_config,
                 &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
+                false,
                 false,
             );
             Pipelines {
@@ -425,6 +427,7 @@ impl<'a> Gpu<'a> {
         config: &wgpu::SurfaceConfiguration,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
         depth_test: bool,
+        enable_lighting: bool,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/default.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -441,12 +444,21 @@ impl<'a> Gpu<'a> {
                 format: wgpu::VertexFormat::Float32x3,
             }],
         };
+        let vertnormal_layout = wgpu::VertexBufferLayout {
+            array_stride: size_of::<[f32; 3]>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x3,
+            }],
+        };
         let vertcolor_layout = wgpu::VertexBufferLayout {
             array_stride: size_of::<[f32; 4]>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
-                shader_location: 1,
+                shader_location: 2,
                 format: wgpu::VertexFormat::Float32x4,
             }],
         };
@@ -455,18 +467,31 @@ impl<'a> Gpu<'a> {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
-                shader_location: 2,
+                shader_location: 3,
                 format: wgpu::VertexFormat::Float32x2,
             }],
         };
+
+        let mut compilation_options: wgpu::PipelineCompilationOptions = Default::default();
+        let mut constants_hash = HashMap::new();
+        if enable_lighting {
+            constants_hash.insert("LIGHTING_ENABLED".to_string(), 1.0);
+        }
+        compilation_options.constants = &constants_hash;
+
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[vertpos_layout, vertcolor_layout, uv_layout],
-                compilation_options: Default::default(),
+                buffers: &[
+                    vertpos_layout,
+                    vertnormal_layout,
+                    vertcolor_layout,
+                    uv_layout,
+                ],
+                compilation_options: compilation_options.clone(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -476,7 +501,7 @@ impl<'a> Gpu<'a> {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING), // TODO: not premultiplied
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: Default::default(),
+                compilation_options: compilation_options,
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -707,8 +732,9 @@ impl<'a> Gpu<'a> {
             .unwrap();
 
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
-        render_pass.set_vertex_buffer(1, mesh.vert_colors.slice(..));
-        render_pass.set_vertex_buffer(2, mesh.uvs.slice(..));
+        render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
+        render_pass.set_vertex_buffer(2, mesh.vert_colors.slice(..));
+        render_pass.set_vertex_buffer(3, mesh.uvs.slice(..));
         render_pass.set_bind_group(0, &uniform.bindgroup, &[]);
 
         let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
