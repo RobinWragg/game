@@ -217,7 +217,7 @@ pub struct Gpu<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipelines: Pipelines,
+    pipelines: [wgpu::RenderPipeline; 4],
     depth_texture_view: wgpu::TextureView,
     uniform_bindgroup_layout: wgpu::BindGroupLayout,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
@@ -231,6 +231,10 @@ pub struct Gpu<'a> {
 }
 
 impl<'a> Gpu<'a> {
+    // These bitflags are OR'd together to create an index into the pipelines array.
+    pub const FEATURE_DEPTH: usize = 0b0001;
+    pub const FEATURE_LIGHT: usize = 0b0010;
+
     pub fn width(&self) -> usize {
         self.width
     }
@@ -359,25 +363,17 @@ impl<'a> Gpu<'a> {
                 label: None,
             });
 
-        let pipelines = {
-            let depth_test = Self::create_pipeline(
-                &device,
-                &surface_config,
-                &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
-                true,
-                true,
-            );
-            let no_depth_test = Self::create_pipeline(
-                &device,
-                &surface_config,
-                &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
-                false,
-                false,
-            );
-            Pipelines {
-                depth_test,
-                no_depth_test,
+        let pipelines: [wgpu::RenderPipeline; 4] = {
+            let mut pipelines = vec![];
+            for flags in 0..4 {
+                pipelines.push(Self::create_pipeline(
+                    &device,
+                    &surface_config,
+                    &[&uniform_bindgroup_layout, &texture_bindgroup_layout],
+                    flags,
+                ));
             }
+            pipelines.try_into().unwrap()
         };
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -426,8 +422,7 @@ impl<'a> Gpu<'a> {
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
-        depth_test: bool,
-        enable_lighting: bool,
+        feature_flags: usize,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/default.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -474,7 +469,7 @@ impl<'a> Gpu<'a> {
 
         let mut compilation_options: wgpu::PipelineCompilationOptions = Default::default();
         let mut constants_hash = HashMap::new();
-        if enable_lighting {
+        if feature_flags & Gpu::FEATURE_LIGHT != 0 {
             constants_hash.insert("LIGHTING_ENABLED".to_string(), 1.0);
         }
         compilation_options.constants = &constants_hash;
@@ -515,7 +510,7 @@ impl<'a> Gpu<'a> {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
-                depth_compare: if depth_test {
+                depth_compare: if feature_flags & Gpu::FEATURE_DEPTH != 0 {
                     wgpu::CompareFunction::Less
                 } else {
                     wgpu::CompareFunction::Always
@@ -632,18 +627,15 @@ impl<'a> Gpu<'a> {
         );
     }
 
-    pub fn depth_test(&mut self, should_test: bool) {
+    pub fn set_render_features(&mut self, feature_flags: usize) {
+        let pipeline = &self.pipelines[feature_flags];
         self.frame_objects
             .as_mut()
             .unwrap()
             .render_pass
             .as_mut()
             .unwrap()
-            .set_pipeline(if should_test {
-                &self.pipelines.depth_test
-            } else {
-                &self.pipelines.no_depth_test
-            });
+            .set_pipeline(&pipeline);
     }
 
     pub fn begin_frame(&mut self) {
@@ -681,7 +673,8 @@ impl<'a> Gpu<'a> {
             })
             .forget_lifetime();
 
-        render_pass.set_pipeline(&self.pipelines.no_depth_test);
+        // todo is it necessary to set the pipeline here?
+        render_pass.set_pipeline(&self.pipelines[0]);
 
         self.frame_objects = Some(FrameObjects {
             surface_texture,

@@ -210,7 +210,7 @@ impl Grid {
     }
 
     pub fn render_2d(&self, gpu: &mut Gpu) {
-        gpu.depth_test(false);
+        gpu.set_render_features(Gpu::FEATURE_DEPTH);
 
         let verts = vec![
             Vec2::new(0.0, 0.0),
@@ -289,7 +289,7 @@ impl Viewer {
     }
 
     pub fn render_ortho(&self, gpu: &mut Gpu) {
-        gpu.depth_test(true);
+        gpu.set_render_features(Gpu::FEATURE_DEPTH | Gpu::FEATURE_LIGHT);
 
         let mut cube_verts = cube_triangles();
 

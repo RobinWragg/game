@@ -167,7 +167,7 @@ impl Debugger {
     }
 
     pub fn render(&mut self, gpu: &mut Gpu) {
-        gpu.depth_test(false);
+        gpu.set_render_features(0);
 
         if !self.full_output.textures_delta.set.is_empty() {
             assert_eq!(self.full_output.textures_delta.set.len(), 1);
