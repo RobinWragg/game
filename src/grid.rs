@@ -239,23 +239,23 @@ impl Grid {
 
 pub struct Viewer {
     global_transform: Mat4,
-    raw_mouse_pos: Vec2,
-    selected_cubes: Vec<IVec3>,
+    mouse_pos: Option<Vec2>,
+    highlighted_cube: Option<IVec3>,
 }
 
 impl Viewer {
     pub fn new() -> Self {
         Self {
             global_transform: Mat4::IDENTITY,
-            raw_mouse_pos: Vec2::splat(0.0),
-            selected_cubes: vec![],
+            mouse_pos: None,
+            highlighted_cube: None,
         }
     }
 
     pub fn update(&mut self, t: f64, events: &mut VecDeque<Event>) {
         events.retain(|event| match event {
             Event::MousePos(p) => {
-                self.raw_mouse_pos = *p;
+                self.mouse_pos = Some(*p);
                 true
             }
             _ => true,
@@ -275,17 +275,23 @@ impl Viewer {
             translate_z * arbitrary_scale * arbitrary_rotate * centering_translation
         };
 
-        self.selected_cubes = {
+        self.highlighted_cube = if let Some(mouse_pos) = self.mouse_pos {
             let global_transform_inv = self.global_transform.inverse();
-            let ray_origin = (global_transform_inv
-                * Vec4::new(self.raw_mouse_pos.x, self.raw_mouse_pos.y, 0.0, 1.0))
-            .xyz();
+            let ray_origin =
+                (global_transform_inv * Vec4::new(mouse_pos.x, mouse_pos.y, 0.0, 1.0)).xyz();
             let ray_direction = (global_transform_inv * Vec4::new(0.0, 0.0, 1.0, 0.0))
                 .xyz()
                 .normalize();
 
-            sorted_ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction)
-        };
+            let intersections = sorted_ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction);
+            if intersections.is_empty() {
+                None
+            } else {
+                Some(intersections[0])
+            }
+        } else {
+            None
+        }
     }
 
     pub fn render_ortho(&self, gpu: &mut Gpu) {
@@ -295,8 +301,8 @@ impl Viewer {
 
         let mesh = Mesh::new(&cube_verts, None, None, gpu);
 
-        let half_trans = Mat4::from_translation(Vec3::new(0.5, 0.5, 0.5));
-        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.8)) * half_trans.inverse();
+        let half_trans = Mat4::from_translation(Vec3::splat(0.5));
+        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.9)) * half_trans.inverse();
 
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
@@ -306,17 +312,13 @@ impl Viewer {
                     let local_translation = Mat4::from_translation(cube_pos.as_vec3());
                     let cube_transform = self.global_transform * local_translation * shrink;
 
-                    if let Some(c) = self.selected_cubes.iter().find(|s| cube_pos == **s) {
-                        let color = if self.selected_cubes[0] == *c {
-                            Vec4::new(0.0, 1.0, 0.0, 1.0)
-                        } else {
-                            Vec4::new(0.0, 0.0, 1.0, 1.0)
-                        };
-
-                        gpu.render_mesh(&mesh, &cube_transform, Some(color));
+                    let color = if self.highlighted_cube == Some(cube_pos) {
+                        Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
                     } else {
-                        gpu.render_mesh(&mesh, &cube_transform, None);
-                    }
+                        None
+                    };
+
+                    gpu.render_mesh(&mesh, &cube_transform, color);
                 }
             }
         }
