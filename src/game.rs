@@ -6,7 +6,7 @@ pub struct Game {
     debugger: Debugger,
     launch_time: Instant,
     prev_frame_start_time: Instant,
-    grid: Grid,
+    grid: Vec<IVec3>,
     grid_viewer: Viewer,
     events_for_next_frame: VecDeque<Event>,
     dragging_pos: Option<Vec2>,
@@ -19,7 +19,7 @@ impl Game {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
-            grid: Grid::load(),
+            grid: vec![],
             grid_viewer: Viewer::new(),
             events_for_next_frame: VecDeque::new(),
             dragging_pos: None,
@@ -44,37 +44,6 @@ impl Game {
         }
     }
 
-    fn update_and_render_grid(
-        &mut self,
-        events: &mut VecDeque<Event>,
-        editor: EditorState,
-        gpu: &mut Gpu,
-    ) {
-        events.retain(|event| match event {
-            Event::MousePos(end) => {
-                if let Some(start) = self.dragging_pos {
-                    // TODO: This can currently be called multiple times per atom when dragging, so my dragging_pos should be a Option<(usize, usize)> instead.
-                    self.grid.modify_under_path(&start, &end, &editor);
-                    self.dragging_pos = Some(*end);
-                }
-                false
-            }
-            Event::LeftClickPressed(pos) => {
-                self.grid.modify_under_path(&pos, &pos, &editor);
-                self.dragging_pos = Some(*pos);
-                false
-            }
-            Event::LeftClickReleased(_) => {
-                self.dragging_pos = None;
-                false
-            }
-            _ => true,
-        });
-
-        self.grid.update(&editor);
-        self.grid.render_2d(gpu);
-    }
-
     pub fn update_and_render(&mut self, gpu: &mut Gpu) {
         gpu.begin_frame();
 
@@ -88,8 +57,9 @@ impl Game {
 
         // self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
 
-        self.grid_viewer.update(total_time, &mut events);
-        self.grid_viewer.render_ortho(gpu);
+        self.grid_viewer
+            .update(&mut self.grid, total_time, &mut events);
+        self.grid_viewer.render_ortho(&self.grid, gpu);
 
         self.debugger.render(gpu);
         gpu.finish_frame();
@@ -100,6 +70,6 @@ impl Game {
 
 impl Drop for Game {
     fn drop(&mut self) {
-        self.grid.save();
+        // TODO: save grid
     }
 }

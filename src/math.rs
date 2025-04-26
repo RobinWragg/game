@@ -142,8 +142,9 @@ fn plane_ray_intersection(
     return None;
 }
 
-fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: Vec3) -> Option<Vec3> {
+fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: IVec3) -> Option<Vec3> {
     let inv_dir = ray_dir.recip();
+    let cube_corner = cube_corner.as_vec3();
 
     let min = cube_corner;
     let max = cube_corner + Vec3::splat(1.0);
@@ -165,33 +166,58 @@ fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: Vec3)
     }
 }
 
-pub fn sorted_ray_grid_intersections(
-    grid_size: usize,
+pub fn closest_ray_grid_intersection(
     ray_origin: Vec3,
     ray_dir: Vec3,
-) -> Vec<IVec3> {
+    cubes: &[IVec3],
+) -> Option<(IVec3, Vec3)> {
     let mut intersections = vec![];
 
-    for x in 0..grid_size {
-        for y in 0..grid_size {
-            for z in 0..grid_size {
-                let cube_corner = Vec3::new(x as f32, y as f32, z as f32);
-                if let Some(_) = ray_unitcube_intersection(ray_origin, ray_dir, cube_corner) {
-                    intersections.push(IVec3::new(x, y, z));
-                }
-            }
+    for cube in cubes {
+        if let Some(intersection) = ray_unitcube_intersection(ray_origin, ray_dir, *cube) {
+            intersections.push((*cube, intersection));
         }
     }
 
+    if intersections.is_empty() {
+        return None;
+    }
+
     let half = Vec3::splat(0.5);
-    let sorter = |a: &IVec3, b: &IVec3| {
-        let a_dist = ray_origin.distance(a.as_vec3() + half);
-        let b_dist = ray_origin.distance(b.as_vec3() + half);
+    let sorter = |a: &(IVec3, Vec3), b: &(IVec3, Vec3)| {
+        let a_dist = ray_origin.distance(a.1);
+        let b_dist = ray_origin.distance(b.1);
         a_dist.partial_cmp(&b_dist).unwrap()
     };
 
     intersections.sort_by(sorter);
-    intersections
+    Some(intersections[0])
+}
+
+pub fn adjacent_cube(origin_cube: IVec3, nearby_pos: Vec3) -> IVec3 {
+    let origin = origin_cube.as_vec3() + Vec3::splat(0.5);
+    let mut candidates = [
+        origin + Vec3::new(-1.0, 0.0, 0.0),
+        origin + Vec3::new(1.0, 0.0, 0.0),
+        origin + Vec3::new(0.0, -1.0, 0.0),
+        origin + Vec3::new(0.0, 1.0, 0.0),
+        origin + Vec3::new(0.0, 0.0, -1.0),
+        origin + Vec3::new(0.0, 0.0, 1.0),
+    ];
+
+    let sorter = |a: &Vec3, b: &Vec3| {
+        let a_dist = nearby_pos.distance(*a);
+        let b_dist = nearby_pos.distance(*b);
+        a_dist.partial_cmp(&b_dist).unwrap()
+    };
+
+    candidates.sort_by(sorter);
+    let closest = candidates[0];
+    IVec3::new(
+        closest.x.floor() as i32,
+        closest.y.floor() as i32,
+        closest.z.floor() as i32,
+    )
 }
 
 #[cfg(test)]

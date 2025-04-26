@@ -1,4 +1,6 @@
-use crate::math::{cube_triangles, sorted_ray_grid_intersections, transform_2d, unit_triangle};
+use crate::math::{
+    adjacent_cube, closest_ray_grid_intersection, cube_triangles, transform_2d, unit_triangle,
+};
 use crate::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -241,6 +243,7 @@ pub struct Viewer {
     global_transform: Mat4,
     mouse_pos: Option<Vec2>,
     highlighted_cube: Option<IVec3>,
+    proposed_cube: Option<IVec3>,
 }
 
 impl Viewer {
@@ -249,17 +252,33 @@ impl Viewer {
             global_transform: Mat4::IDENTITY,
             mouse_pos: None,
             highlighted_cube: None,
+            proposed_cube: None,
         }
     }
 
-    pub fn update(&mut self, t: f64, events: &mut VecDeque<Event>) {
+    pub fn update(&mut self, grid: &mut Vec<IVec3>, t: f64, events: &mut VecDeque<Event>) {
+        let mut should_add_cube = false;
+        let mut should_remove_cube = false;
+
         events.retain(|event| match event {
             Event::MousePos(p) => {
                 self.mouse_pos = Some(*p);
                 true
             }
+            Event::LeftClickPressed(p) => {
+                should_add_cube = true;
+                false
+            }
+            Event::RightClickPressed(p) => {
+                should_remove_cube = true;
+                false
+            }
             _ => true,
         });
+
+        if grid.is_empty() {
+            grid.push(IVec3::splat(0));
+        }
 
         self.global_transform = {
             let arbitrary_rotate = {
@@ -267,15 +286,14 @@ impl Viewer {
                 let y = Mat4::from_rotation_y(t as f32 * 0.12345);
                 x * y
             };
-            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.2, 0.2, 0.1));
+            let depth_buffer_resolution = 0.01;
+            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.2, 0.2, depth_buffer_resolution));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
-            let centering_translation =
-                Mat4::from_translation(Vec3::splat(GRID_SIZE as f32 / -2.0));
-            translate_z * arbitrary_scale * arbitrary_rotate * centering_translation
+            translate_z * arbitrary_scale * arbitrary_rotate
         };
 
-        self.highlighted_cube = if let Some(mouse_pos) = self.mouse_pos {
+        let selection = if let Some(mouse_pos) = self.mouse_pos {
             let global_transform_inv = self.global_transform.inverse();
             let ray_origin =
                 (global_transform_inv * Vec4::new(mouse_pos.x, mouse_pos.y, 0.0, 1.0)).xyz();
@@ -283,18 +301,44 @@ impl Viewer {
                 .xyz()
                 .normalize();
 
-            let intersections = sorted_ray_grid_intersections(GRID_SIZE, ray_origin, ray_direction);
-            if intersections.is_empty() {
-                None
+            if let Some((cube, intersection_location)) =
+                closest_ray_grid_intersection(ray_origin, ray_direction, grid)
+            {
+                Some((cube, intersection_location))
             } else {
-                Some(intersections[0])
+                None
             }
         } else {
             None
+        };
+
+        if let Some((highlighted_cube, intersection_location)) = selection {
+            self.highlighted_cube = Some(highlighted_cube);
+            self.proposed_cube = Some(adjacent_cube(highlighted_cube, intersection_location));
+            if self.highlighted_cube == self.proposed_cube {
+                self.proposed_cube = None;
+            }
+        } else {
+            self.highlighted_cube = None;
+            self.proposed_cube = None;
+        }
+
+        if should_add_cube {
+            if let Some(proposed_cube) = self.proposed_cube {
+                if !grid.contains(&proposed_cube) {
+                    grid.push(proposed_cube);
+                }
+            }
+        } else if should_remove_cube {
+            if let Some(highlighted_cube) = self.highlighted_cube {
+                if let Some(pos) = grid.iter().position(|&x| x == highlighted_cube) {
+                    grid.remove(pos);
+                }
+            }
         }
     }
 
-    pub fn render_ortho(&self, gpu: &mut Gpu) {
+    pub fn render_ortho(&self, grid: &[IVec3], gpu: &mut Gpu) {
         gpu.set_render_features(Gpu::FEATURE_DEPTH | Gpu::FEATURE_LIGHT);
 
         let mut cube_verts = cube_triangles();
@@ -304,23 +348,23 @@ impl Viewer {
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.9)) * half_trans.inverse();
 
-        for x in 0..GRID_SIZE {
-            for y in 0..GRID_SIZE {
-                for z in 0..GRID_SIZE {
-                    let cube_pos = IVec3::new(x, y, z);
+        for cube_pos in grid {
+            let local_translation = Mat4::from_translation(cube_pos.as_vec3());
+            let cube_transform = self.global_transform * local_translation * shrink;
 
-                    let local_translation = Mat4::from_translation(cube_pos.as_vec3());
-                    let cube_transform = self.global_transform * local_translation * shrink;
+            let color = if self.highlighted_cube == Some(*cube_pos) {
+                Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
+            } else {
+                None
+            };
 
-                    let color = if self.highlighted_cube == Some(cube_pos) {
-                        Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
-                    } else {
-                        None
-                    };
+            gpu.render_mesh(&mesh, &cube_transform, color);
+        }
 
-                    gpu.render_mesh(&mesh, &cube_transform, color);
-                }
-            }
+        if let Some(proposed_cube) = self.proposed_cube {
+            let local_translation = Mat4::from_translation(proposed_cube.as_vec3());
+            let cube_transform = self.global_transform * local_translation * shrink;
+            gpu.render_mesh(&mesh, &cube_transform, Some(Vec4::new(0.0, 1.0, 1.0, 1.0)));
         }
     }
 }
