@@ -291,7 +291,7 @@ impl Grid {
     }
 }
 
-pub struct Viewer {
+pub struct Editor {
     global_transform: Mat4,
     rotation: Vec2,
     mouse_pos: Option<Vec2>,
@@ -299,7 +299,7 @@ pub struct Viewer {
     proposed_cube: Option<IVec3>,
 }
 
-impl Viewer {
+impl Editor {
     pub fn new() -> Self {
         Self {
             global_transform: Mat4::IDENTITY,
@@ -433,6 +433,28 @@ impl Viewer {
             let cube_transform = self.global_transform * local_translation * shrink;
             gpu.render_mesh(&mesh, &cube_transform, Some(Vec4::new(0.0, 1.0, 1.0, 1.0)));
         }
+    }
+}
+
+pub struct Viewer {}
+
+impl Viewer {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn render(&self, gpu: &mut Gpu) {
+        gpu.set_render_features(Gpu::FEATURE_DEPTH);
+        let rectangle_verts = [
+            Vec2::new(0.0, 0.0),
+            Vec2::new(2.0, 0.0),
+            Vec2::new(2.0, 1.0),
+            Vec2::new(2.0, 1.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(0.0, 0.0),
+        ];
+        let mesh = Mesh::new_2d(&rectangle_verts, None, None, gpu);
+        gpu.render_mesh(&mesh, &Mat4::IDENTITY, Some(Vec4::new(1.0, 0.0, 0.0, 1.0)));
     }
 }
 

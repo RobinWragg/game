@@ -7,6 +7,7 @@ pub struct Game {
     launch_time: Instant,
     prev_frame_start_time: Instant,
     grid: Grid,
+    grid_editor: Editor,
     grid_viewer: Viewer,
     events_for_next_frame: VecDeque<Event>,
     dragging_pos: Option<Vec2>,
@@ -20,6 +21,7 @@ impl Game {
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
             grid: Grid::new(),
+            grid_editor: Editor::new(),
             grid_viewer: Viewer::new(),
             events_for_next_frame: VecDeque::new(),
             dragging_pos: None,
@@ -57,9 +59,10 @@ impl Game {
 
         // self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
 
-        self.grid_viewer
+        self.grid_editor
             .update(&mut self.grid, total_time, &mut events);
-        self.grid_viewer.render_ortho(&self.grid, gpu);
+        self.grid_editor.render_ortho(&self.grid, gpu);
+        self.grid_viewer.render(gpu);
 
         self.debugger.render(gpu);
         gpu.finish_frame();
