@@ -166,10 +166,10 @@ fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: IVec3
     }
 }
 
-pub fn closest_ray_grid_intersection(
+pub fn closest_ray_grid_intersection<'a>(
     ray_origin: Vec3,
     ray_dir: Vec3,
-    cubes: &[IVec3],
+    cubes: impl IntoIterator<Item = &'a IVec3>,
 ) -> Option<(IVec3, Vec3)> {
     let mut intersections = vec![];
 

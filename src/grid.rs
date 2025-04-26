@@ -29,13 +29,13 @@ impl Default for Atom {
     }
 }
 
-pub struct Grid {
+pub struct Grid2d {
     atoms: Vec<Vec<Atom>>,
     transform: Mat4,
     mover: f32,
 }
 
-impl Grid {
+impl Grid2d {
     fn new() -> Self {
         let scale = 0.1;
         let translate_z = 0.5; // The viable range is 0 to 1, so put it in the middle.
@@ -85,7 +85,7 @@ impl Grid {
             end.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
         );
 
-        for (x, y) in Grid::atoms_on_path(start, end) {
+        for (x, y) in Grid2d::atoms_on_path(start, end) {
             self.atoms[x][y] = editor.current_atom;
         }
     }
@@ -239,6 +239,58 @@ impl Grid {
     }
 }
 
+pub struct Cube {
+    pub pos: IVec3,
+    pub color: Vec4,
+}
+
+pub struct Grid {
+    cubes: Vec<Cube>,
+}
+
+impl Grid {
+    pub fn new() -> Self {
+        Self { cubes: vec![] }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cubes.is_empty()
+    }
+
+    pub fn add(&mut self, pos: IVec3) {
+        debug_assert!(!self.contains(&pos), "Cube already exists at this position");
+        self.cubes.push(Cube {
+            pos,
+            color: Vec4::new(1.0, rand::random::<f32>(), rand::random::<f32>(), 1.0),
+        });
+    }
+
+    pub fn overwrite(&mut self, pos: IVec3) {
+        debug_assert!(self.contains(&pos), "Cube doesn't exist at this position");
+        self.cubes
+            .iter_mut()
+            .find(|cube| cube.pos == pos)
+            .unwrap()
+            .pos = pos;
+    }
+
+    pub fn contains(&self, pos: &IVec3) -> bool {
+        self.cubes.iter().any(|cube| cube.pos == *pos)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Cube> {
+        self.cubes.iter()
+    }
+
+    pub fn positions(&self) -> impl Iterator<Item = &IVec3> {
+        self.cubes.iter().map(|cube| &cube.pos)
+    }
+
+    pub fn remove(&mut self, pos: IVec3) {
+        self.cubes.retain(|cube| cube.pos != pos);
+    }
+}
+
 pub struct Viewer {
     global_transform: Mat4,
     rotation: Vec2,
@@ -258,7 +310,7 @@ impl Viewer {
         }
     }
 
-    pub fn update(&mut self, grid: &mut Vec<IVec3>, t: f64, events: &mut VecDeque<Event>) {
+    pub fn update(&mut self, grid: &mut Grid, t: f64, events: &mut VecDeque<Event>) {
         let mut should_add_cube = false;
         let mut should_remove_cube = false;
         let mut scroll_delta = Vec2::ZERO;
@@ -284,7 +336,7 @@ impl Viewer {
         });
 
         if grid.is_empty() {
-            grid.push(IVec3::splat(0));
+            grid.add(IVec3::splat(0));
         }
 
         // Rotation TODO: test whether this is framerate dependent
@@ -319,7 +371,7 @@ impl Viewer {
                 .normalize();
 
             if let Some((cube, intersection_location)) =
-                closest_ray_grid_intersection(ray_origin, ray_direction, grid)
+                closest_ray_grid_intersection(ray_origin, ray_direction, grid.positions())
             {
                 Some((cube, intersection_location))
             } else {
@@ -343,19 +395,17 @@ impl Viewer {
         if should_add_cube {
             if let Some(proposed_cube) = self.proposed_cube {
                 if !grid.contains(&proposed_cube) {
-                    grid.push(proposed_cube);
+                    grid.add(proposed_cube);
                 }
             }
         } else if should_remove_cube {
             if let Some(highlighted_cube) = self.highlighted_cube {
-                if let Some(pos) = grid.iter().position(|&x| x == highlighted_cube) {
-                    grid.remove(pos);
-                }
+                grid.remove(highlighted_cube);
             }
         }
     }
 
-    pub fn render_ortho(&self, grid: &[IVec3], gpu: &mut Gpu) {
+    pub fn render_ortho(&self, grid: &Grid, gpu: &mut Gpu) {
         gpu.set_render_features(Gpu::FEATURE_DEPTH | Gpu::FEATURE_LIGHT);
 
         let mut cube_verts = cube_triangles();
@@ -365,14 +415,14 @@ impl Viewer {
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let shrink = half_trans * Mat4::from_scale(Vec3::splat(1.0)) * half_trans.inverse();
 
-        for cube_pos in grid {
-            let local_translation = Mat4::from_translation(cube_pos.as_vec3());
+        for cube in grid.iter() {
+            let local_translation = Mat4::from_translation(cube.pos.as_vec3());
             let cube_transform = self.global_transform * local_translation * shrink;
 
-            let color = if self.highlighted_cube == Some(*cube_pos) {
+            let color = if self.highlighted_cube == Some(cube.pos) {
                 Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
             } else {
-                None
+                Some(cube.color)
             };
 
             gpu.render_mesh(&mesh, &cube_transform, color);
@@ -392,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_zero_path() {
-        let path = Grid::atoms_on_path((2, 2), (2, 2));
+        let path = Grid2d::atoms_on_path((2, 2), (2, 2));
         assert_eq!(path, vec![(2, 2)]);
     }
 }
