@@ -107,6 +107,19 @@ impl ApplicationHandler for App<'_> {
                     }
                 }
             }
+            WindowEvent::MouseWheel {
+                device_id: _,
+                delta,
+                phase: _,
+            } => {
+                let scroll_delta = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => Vec2::new(x, y),
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        Vec2::new(pos.x as f32, pos.y as f32)
+                    }
+                };
+                game.push_event(Event::Scroll(scroll_delta));
+            }
             WindowEvent::CloseRequested => event_loop.exit(), // TODO: call this when doing cmd+Q etc
             WindowEvent::RedrawRequested => {
                 game.update_and_render(gpu);

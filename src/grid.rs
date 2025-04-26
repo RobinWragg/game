@@ -241,6 +241,7 @@ impl Grid {
 
 pub struct Viewer {
     global_transform: Mat4,
+    rotation: Vec2,
     mouse_pos: Option<Vec2>,
     highlighted_cube: Option<IVec3>,
     proposed_cube: Option<IVec3>,
@@ -250,6 +251,7 @@ impl Viewer {
     pub fn new() -> Self {
         Self {
             global_transform: Mat4::IDENTITY,
+            rotation: Vec2::ZERO,
             mouse_pos: None,
             highlighted_cube: None,
             proposed_cube: None,
@@ -259,11 +261,16 @@ impl Viewer {
     pub fn update(&mut self, grid: &mut Vec<IVec3>, t: f64, events: &mut VecDeque<Event>) {
         let mut should_add_cube = false;
         let mut should_remove_cube = false;
+        let mut scroll_delta = Vec2::ZERO;
 
         events.retain(|event| match event {
             Event::MousePos(p) => {
                 self.mouse_pos = Some(*p);
                 true
+            }
+            Event::Scroll(s) => {
+                scroll_delta = *s;
+                false
             }
             Event::LeftClickPressed(p) => {
                 should_add_cube = true;
@@ -280,17 +287,27 @@ impl Viewer {
             grid.push(IVec3::splat(0));
         }
 
+        // Rotation TODO: test whether this is framerate dependent
+        {
+            self.rotation += scroll_delta * -0.005;
+            if self.rotation.x > TAU {
+                self.rotation.x -= TAU;
+            } else if self.rotation.x < -TAU {
+                self.rotation.x += TAU;
+            }
+
+            let y_rotation_limit = (PI / 2.0) * 0.9;
+            self.rotation.y = self.rotation.y.clamp(-y_rotation_limit, y_rotation_limit);
+        }
+
         self.global_transform = {
-            let arbitrary_rotate = {
-                let x = Mat4::from_rotation_x(t as f32 * 0.2);
-                let y = Mat4::from_rotation_y(t as f32 * 0.12345);
-                x * y
-            };
             let depth_buffer_resolution = 0.01;
             let arbitrary_scale = Mat4::from_scale(Vec3::new(0.2, 0.2, depth_buffer_resolution));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
-            translate_z * arbitrary_scale * arbitrary_rotate
+            let rotation =
+                Mat4::from_rotation_x(self.rotation.y) * Mat4::from_rotation_y(self.rotation.x);
+            translate_z * arbitrary_scale * rotation
         };
 
         let selection = if let Some(mouse_pos) = self.mouse_pos {
@@ -346,7 +363,7 @@ impl Viewer {
         let mesh = Mesh::new(&cube_verts, None, None, gpu);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
-        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.9)) * half_trans.inverse();
+        let shrink = half_trans * Mat4::from_scale(Vec3::splat(1.0)) * half_trans.inverse();
 
         for cube_pos in grid {
             let local_translation = Mat4::from_translation(cube_pos.as_vec3());
