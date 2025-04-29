@@ -1,7 +1,7 @@
 pub use crate::debugger::Debugger;
 pub use crate::gpu::{Gpu, Mesh};
 pub use glam::{
-    f32::{Mat4, Vec2, Vec3, Vec4},
+    f32::{Mat3, Mat4, Vec2, Vec3, Vec4},
     i32::IVec3,
     Quat, Vec2Swizzles, Vec3Swizzles, Vec4Swizzles,
 };

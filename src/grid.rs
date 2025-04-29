@@ -1,13 +1,13 @@
-use crate::math::{
-    adjacent_cube, closest_ray_grid_intersection, cube_triangles, transform_2d, unit_triangle,
-};
+use crate::math::{adjacent_cube, closest_ray_grid_intersection, cube_triangles, transform_2d};
 use crate::prelude::*;
+use dot_vox;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
 pub const GRID_SIZE: usize = 4;
 
+// TODO: use a hashmap instead?
 #[derive(Default, Copy, Clone)]
 pub struct EditorState {
     pub current_atom: Atom,
@@ -239,6 +239,7 @@ impl Grid2d {
     }
 }
 
+#[derive(Clone)]
 pub struct Cube {
     pub pos: IVec3,
     pub color: Vec4,
@@ -310,7 +311,7 @@ impl Editor {
         }
     }
 
-    pub fn update(&mut self, grid: &mut Grid, t: f64, events: &mut VecDeque<Event>) {
+    pub fn update(&mut self, grid: &mut Grid, events: &mut VecDeque<Event>) {
         let mut should_add_cube = false;
         let mut should_remove_cube = false;
         let mut scroll_delta = Vec2::ZERO;
@@ -324,11 +325,11 @@ impl Editor {
                 scroll_delta = *s;
                 false
             }
-            Event::LeftClickPressed(p) => {
+            Event::LeftClickPressed(_) => {
                 should_add_cube = true;
                 false
             }
-            Event::RightClickPressed(p) => {
+            Event::RightClickPressed(_) => {
                 should_remove_cube = true;
                 false
             }
@@ -341,7 +342,7 @@ impl Editor {
 
         // Rotation TODO: test whether this is framerate dependent
         {
-            self.rotation += scroll_delta * -0.005;
+            self.rotation += scroll_delta * -0.002;
             if self.rotation.x > TAU {
                 self.rotation.x -= TAU;
             } else if self.rotation.x < -TAU {
@@ -354,7 +355,7 @@ impl Editor {
 
         self.global_transform = {
             let depth_buffer_resolution = 0.01;
-            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.2, 0.2, depth_buffer_resolution));
+            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.01, 0.01, depth_buffer_resolution));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
             let rotation =
@@ -408,9 +409,7 @@ impl Editor {
     pub fn render_ortho(&self, grid: &Grid, gpu: &mut Gpu) {
         gpu.set_render_features(Gpu::FEATURE_DEPTH | Gpu::FEATURE_LIGHT);
 
-        let mut cube_verts = cube_triangles();
-
-        let mesh = Mesh::new(&cube_verts, None, None, gpu);
+        let mesh = Mesh::new(&cube_triangles(), None, None, gpu);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let shrink = half_trans * Mat4::from_scale(Vec3::splat(1.0)) * half_trans.inverse();
@@ -443,18 +442,48 @@ impl Viewer {
         Self {}
     }
 
-    pub fn render(&self, gpu: &mut Gpu) {
+    pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut Gpu) {
         gpu.set_render_features(Gpu::FEATURE_DEPTH);
         let rectangle_verts = [
             Vec2::new(0.0, 0.0),
-            Vec2::new(2.0, 0.0),
-            Vec2::new(2.0, 1.0),
-            Vec2::new(2.0, 1.0),
+            Vec2::new(4.0, 0.0),
+            Vec2::new(4.0, 1.0),
+            Vec2::new(4.0, 1.0),
             Vec2::new(0.0, 1.0),
             Vec2::new(0.0, 0.0),
         ];
+
         let mesh = Mesh::new_2d(&rectangle_verts, None, None, gpu);
-        gpu.render_mesh(&mesh, &Mat4::IDENTITY, Some(Vec4::new(1.0, 0.0, 0.0, 1.0)));
+        let mat = Mat4::from_translation(global_translation.extend(0.5))
+            * Mat4::from_scale(Vec3::splat(0.01));
+
+        let xhat = Vec3::new(2.0, 1.0, 1.0);
+        let yhat = Vec3::new(0.0, 3.0, -1.0); // TODO: could do 0,3,0 instead and handle the depth using the mesh.
+        let zhat = Vec3::new(-2.0, 1.0, 1.0);
+        let r = Mat3::from_cols(xhat, yhat, zhat);
+
+        for cube in grid.iter() {
+            let p = r * cube.pos.as_vec3();
+            let cube_mat = Mat4::from_translation(p);
+
+            let front_color = (cube.color.xyz() * 0.7).extend(1.0);
+            gpu.render_mesh(&mesh, &(mat * cube_mat), Some(cube.color));
+            gpu.render_mesh(
+                &mesh,
+                &(mat * cube_mat * Mat4::from_translation(Vec3::new(0.0, -1.0, 0.0))),
+                Some(front_color),
+            );
+            gpu.render_mesh(
+                &mesh,
+                &(mat * cube_mat * Mat4::from_translation(Vec3::new(0.0, -2.0, 0.0))),
+                Some(front_color),
+            );
+            gpu.render_mesh(
+                &mesh,
+                &(mat * cube_mat * Mat4::from_translation(Vec3::new(0.0, -3.0, 0.0))),
+                Some(front_color),
+            );
+        }
     }
 }
 
