@@ -256,15 +256,21 @@ impl Grid {
             assert!(vox.models.len() == 1);
             let model = &vox.models[0];
             dbg!(model.voxels.len());
+
             let mut cubes: Vec<Cube> = model
                 .voxels
                 .iter()
                 .map(|voxel| Cube {
                     pos: IVec3::new(voxel.x as i32, voxel.y as i32, voxel.z as i32),
-                    color: Vec4::splat(1.0),
+                    color: Vec4::new(
+                        vox.palette[voxel.i as usize].r as f32 / 255.0,
+                        vox.palette[voxel.i as usize].g as f32 / 255.0,
+                        vox.palette[voxel.i as usize].b as f32 / 255.0,
+                        1.0,
+                    ),
                 })
                 .collect();
-            cubes = cubes.split_at(200).0.to_vec();
+            // cubes = cubes.split_at(8 * 8 * 8).0.to_vec();
 
             // Center the cubes around the origin
             cubes = {
@@ -277,6 +283,22 @@ impl Grid {
                 let center = (maximum + minimum) / 2;
                 for cube in &mut cubes {
                     cube.pos -= center;
+                }
+
+                // axes
+                for i in 1..32 {
+                    cubes.push(Cube {
+                        pos: IVec3::new(i, 0, 0),
+                        color: Vec4::new(1.0, 0.0, 0.0, 1.0),
+                    });
+                    cubes.push(Cube {
+                        pos: IVec3::new(0, i, 0),
+                        color: Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    });
+                    cubes.push(Cube {
+                        pos: IVec3::new(0, 0, i),
+                        color: Vec4::new(0.0, 0.0, 1.0, 1.0),
+                    });
                 }
                 cubes
             };
