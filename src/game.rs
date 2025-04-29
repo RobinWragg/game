@@ -59,16 +59,11 @@ impl Game {
 
         // self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
 
-        self.grid_editor
-            .update(&mut self.grid, total_time, &mut events);
+        self.grid_editor.update(&mut self.grid, &mut events);
         self.grid_editor.render_ortho(&self.grid, gpu);
 
-        self.grid_viewer.render(
-            &self.grid,
-            Vec2::new(1.0, 0.0),
-            &self.debugger.editor_state,
-            gpu,
-        );
+        self.grid_viewer
+            .render(&self.grid, Vec2::new(1.0, 0.0), gpu);
 
         self.debugger.render(gpu);
         gpu.finish_frame();

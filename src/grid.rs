@@ -251,7 +251,40 @@ pub struct Grid {
 
 impl Grid {
     pub fn new() -> Self {
-        Self { cubes: vec![] }
+        if true {
+            let vox = dot_vox::load("nopush/Transtellar/Transtellar.vox").unwrap();
+            assert!(vox.models.len() == 1);
+            let model = &vox.models[0];
+            dbg!(model.voxels.len());
+            let mut cubes: Vec<Cube> = model
+                .voxels
+                .iter()
+                .map(|voxel| Cube {
+                    pos: IVec3::new(voxel.x as i32, voxel.y as i32, voxel.z as i32),
+                    color: Vec4::splat(1.0),
+                })
+                .collect();
+            cubes = cubes.split_at(200).0.to_vec();
+
+            // Center the cubes around the origin
+            cubes = {
+                let mut minimum = IVec3::splat(i32::MAX);
+                let mut maximum = IVec3::splat(i32::MIN);
+                for cube in &cubes {
+                    minimum = cube.pos.min(minimum);
+                    maximum = cube.pos.max(maximum);
+                }
+                let center = (maximum + minimum) / 2;
+                for cube in &mut cubes {
+                    cube.pos -= center;
+                }
+                cubes
+            };
+
+            Self { cubes }
+        } else {
+            Self { cubes: vec![] }
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -355,7 +388,7 @@ impl Editor {
 
         self.global_transform = {
             let depth_buffer_resolution = 0.01;
-            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.01, 0.01, depth_buffer_resolution));
+            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.04, 0.04, depth_buffer_resolution));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
             let rotation =
@@ -444,16 +477,43 @@ impl Viewer {
 
     pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut Gpu) {
         gpu.set_render_features(Gpu::FEATURE_DEPTH);
-        let rectangle_verts = [
-            Vec2::new(0.0, 0.0),
-            Vec2::new(4.0, 0.0),
-            Vec2::new(4.0, 1.0),
-            Vec2::new(4.0, 1.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(0.0, 0.0),
+
+        let verts = [
+            // front
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(4.0, 0.0, 0.0),
+            Vec3::new(4.0, 3.0, 0.0),
+            Vec3::new(4.0, 3.0, 0.0),
+            Vec3::new(0.0, 3.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            // top
+            Vec3::new(0.0, 3.0, 0.0),
+            Vec3::new(4.0, 3.0, 0.0),
+            Vec3::new(4.0, 4.0, 0.0),
+            Vec3::new(4.0, 4.0, 0.0),
+            Vec3::new(0.0, 4.0, 0.0),
+            Vec3::new(0.0, 3.0, 0.0),
+        ];
+        let front_intensity = Vec3::splat(0.7).extend(1.0);
+        let top_intensity = Vec4::splat(1.0);
+        let intensities = [
+            // front
+            front_intensity,
+            front_intensity,
+            front_intensity,
+            front_intensity,
+            front_intensity,
+            front_intensity,
+            // top
+            top_intensity,
+            top_intensity,
+            top_intensity,
+            top_intensity,
+            top_intensity,
+            top_intensity,
         ];
 
-        let mesh = Mesh::new_2d(&rectangle_verts, None, None, gpu);
+        let mesh = Mesh::new(&verts, Some(&intensities), None, gpu);
         let mat = Mat4::from_translation(global_translation.extend(0.5))
             * Mat4::from_scale(Vec3::splat(0.01));
 
@@ -465,24 +525,7 @@ impl Viewer {
         for cube in grid.iter() {
             let p = r * cube.pos.as_vec3();
             let cube_mat = Mat4::from_translation(p);
-
-            let front_color = (cube.color.xyz() * 0.7).extend(1.0);
             gpu.render_mesh(&mesh, &(mat * cube_mat), Some(cube.color));
-            gpu.render_mesh(
-                &mesh,
-                &(mat * cube_mat * Mat4::from_translation(Vec3::new(0.0, -1.0, 0.0))),
-                Some(front_color),
-            );
-            gpu.render_mesh(
-                &mesh,
-                &(mat * cube_mat * Mat4::from_translation(Vec3::new(0.0, -2.0, 0.0))),
-                Some(front_color),
-            );
-            gpu.render_mesh(
-                &mesh,
-                &(mat * cube_mat * Mat4::from_translation(Vec3::new(0.0, -3.0, 0.0))),
-                Some(front_color),
-            );
         }
     }
 }
