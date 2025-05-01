@@ -169,14 +169,14 @@ struct Uniform {
 
 impl Uniform {
     fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
-        debug_assert_eq!(size_of::<Mat4>(), 16 * 4);
-        debug_assert_eq!(size_of::<Vec4>(), 4 * 4);
+        let size = size_of::<Mat4>() + size_of::<Vec4>();
+        debug_assert_eq!(size, 16 * 4 + 4 * 4);
 
         let buffer = {
             let desc = wgpu::BufferDescriptor {
                 label: None,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                size: (size_of::<Mat4>() + size_of::<Vec4>()) as u64,
+                size: size as u64,
                 mapped_at_creation: false,
             };
             device.create_buffer(&desc)

@@ -10,27 +10,27 @@ pub const GRID_SIZE: usize = 4;
 // TODO: use a hashmap instead?
 #[derive(Default, Copy, Clone)]
 pub struct EditorState {
-    pub current_atom: Atom,
+    pub current_atom: Atom2d,
     pub should_reload: bool,
     pub is_playing: bool,
     pub should_step: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Atom {
+pub enum Atom2d {
     Gas(f32),
     Solid,
     Liquid,
 }
 
-impl Default for Atom {
+impl Default for Atom2d {
     fn default() -> Self {
-        Atom::Gas(0.0)
+        Atom2d::Gas(0.0)
     }
 }
 
 pub struct Grid2d {
-    atoms: Vec<Vec<Atom>>,
+    atoms: Vec<Vec<Atom2d>>,
     transform: Mat4,
     mover: f32,
 }
@@ -42,13 +42,13 @@ impl Grid2d {
         Self {
             transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
                 * Mat4::from_scale(Vec3::new(scale, scale, scale)),
-            atoms: vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE],
+            atoms: vec![vec![Atom2d::default(); GRID_SIZE]; GRID_SIZE],
             mover: 0.0,
         }
     }
 
     pub fn load() -> Self {
-        fn load_inner() -> Result<Vec<Vec<Atom>>, std::io::Error> {
+        fn load_inner() -> Result<Vec<Vec<Atom2d>>, std::io::Error> {
             let mut file = File::open("nopush/grid_save.json")?;
             let mut contents = String::new();
             file.read_to_string(&mut contents)?;
@@ -64,7 +64,7 @@ impl Grid2d {
             }
             Err(_) => {
                 println!("Creating new atoms");
-                vec![vec![Atom::default(); GRID_SIZE]; GRID_SIZE]
+                vec![vec![Atom2d::default(); GRID_SIZE]; GRID_SIZE]
             }
         };
 
@@ -142,16 +142,16 @@ impl Grid2d {
         let (cell_a, cell_b) = column_a[x].split_at_mut(y + 1);
         let (cell_c, cell_d) = column_b[0].split_at_mut(y + 1);
 
-        if let Atom::Gas(pressure) = &mut cell_a[y] {
+        if let Atom2d::Gas(pressure) = &mut cell_a[y] {
             pressures.push(pressure);
         }
-        if let Atom::Gas(pressure) = &mut cell_b[0] {
+        if let Atom2d::Gas(pressure) = &mut cell_b[0] {
             pressures.push(pressure);
         }
-        if let Atom::Gas(pressure) = &mut cell_c[y] {
+        if let Atom2d::Gas(pressure) = &mut cell_c[y] {
             pressures.push(pressure);
         }
-        if let Atom::Gas(pressure) = &mut cell_d[0] {
+        if let Atom2d::Gas(pressure) = &mut cell_d[0] {
             pressures.push(pressure);
         }
 
@@ -202,12 +202,12 @@ impl Grid2d {
 
         // Erase edges
         for x in 0..GRID_SIZE {
-            self.atoms[x][0] = Atom::Gas(0.0);
-            self.atoms[x][GRID_SIZE - 1] = Atom::Gas(0.0);
+            self.atoms[x][0] = Atom2d::Gas(0.0);
+            self.atoms[x][GRID_SIZE - 1] = Atom2d::Gas(0.0);
         }
         for y in 0..GRID_SIZE {
-            self.atoms[0][y] = Atom::Gas(0.0);
-            self.atoms[GRID_SIZE - 1][y] = Atom::Gas(0.0);
+            self.atoms[0][y] = Atom2d::Gas(0.0);
+            self.atoms[GRID_SIZE - 1][y] = Atom2d::Gas(0.0);
         }
     }
 
@@ -228,9 +228,9 @@ impl Grid2d {
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
                 let color = match self.atoms[x][y] {
-                    Atom::Gas(v) => Vec4::new(v * 0.01, 0.0, 1.0 - v * 0.01, 1.0),
-                    Atom::Solid => Vec4::new(0.0, 1.0, 0.0, 1.0),
-                    Atom::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
+                    Atom2d::Gas(v) => Vec4::new(v * 0.01, 0.0, 1.0 - v * 0.01, 1.0),
+                    Atom2d::Solid => Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    Atom2d::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
                 };
                 let m = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0));
                 gpu.render_mesh(&mesh, &(self.transform * m), Some(color));
@@ -261,7 +261,7 @@ impl Grid {
                 .voxels
                 .iter()
                 .map(|voxel| Cube {
-                    pos: IVec3::new(voxel.x as i32, voxel.y as i32, voxel.z as i32),
+                    pos: IVec3::new(voxel.x as i32, voxel.z as i32, voxel.y as i32),
                     color: Vec4::new(
                         vox.palette[voxel.i as usize].r as f32 / 255.0,
                         vox.palette[voxel.i as usize].g as f32 / 255.0,
@@ -343,12 +343,45 @@ impl Grid {
     }
 
     pub fn remove(&mut self, pos: IVec3) {
+        // TODO: This will check all cubes even if the cube is found early.
         self.cubes.retain(|cube| cube.pos != pos);
+    }
+
+    pub fn hollow_out(&mut self) {
+        let cubes_2 = self.cubes.clone();
+        self.cubes.retain(|a| {
+            cubes_2
+                .iter()
+                .find(|b| b.pos.x == a.pos.x + 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
+                .is_none()
+                || cubes_2
+                    .iter()
+                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y + 1 && b.pos.z == a.pos.z)
+                    .is_none()
+                || cubes_2
+                    .iter()
+                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z + 1)
+                    .is_none()
+                || cubes_2
+                    .iter()
+                    .find(|b| b.pos.x == a.pos.x - 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
+                    .is_none()
+                || cubes_2
+                    .iter()
+                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y - 1 && b.pos.z == a.pos.z)
+                    .is_none()
+                || cubes_2
+                    .iter()
+                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z - 1)
+                    .is_none()
+        });
+
+        println!("Hollowed out {} cubes", cubes_2.len() - self.cubes.len());
     }
 }
 
 pub struct Editor {
-    global_transform: Mat4,
+    camera_transform: Mat4, // Sans aspect ratio correct for now
     rotation: Vec2,
     mouse_pos: Option<Vec2>,
     highlighted_cube: Option<IVec3>,
@@ -358,7 +391,7 @@ pub struct Editor {
 impl Editor {
     pub fn new() -> Self {
         Self {
-            global_transform: Mat4::IDENTITY,
+            camera_transform: Mat4::IDENTITY,
             rotation: Vec2::ZERO,
             mouse_pos: None,
             highlighted_cube: None,
@@ -408,9 +441,9 @@ impl Editor {
             self.rotation.y = self.rotation.y.clamp(-y_rotation_limit, y_rotation_limit);
         }
 
-        self.global_transform = {
+        self.camera_transform = {
             let depth_buffer_resolution = 0.01;
-            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.04, 0.04, depth_buffer_resolution));
+            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.02, 0.02, depth_buffer_resolution));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
             let rotation =
@@ -419,10 +452,10 @@ impl Editor {
         };
 
         let selection = if let Some(mouse_pos) = self.mouse_pos {
-            let global_transform_inv = self.global_transform.inverse();
+            let camera_transform_inv = self.camera_transform.inverse();
             let ray_origin =
-                (global_transform_inv * Vec4::new(mouse_pos.x, mouse_pos.y, 0.0, 1.0)).xyz();
-            let ray_direction = (global_transform_inv * Vec4::new(0.0, 0.0, 1.0, 0.0))
+                (camera_transform_inv * Vec4::new(mouse_pos.x, mouse_pos.y, 0.0, 1.0)).xyz();
+            let ray_direction = (camera_transform_inv * Vec4::new(0.0, 0.0, 1.0, 0.0))
                 .xyz()
                 .normalize();
 
@@ -470,8 +503,8 @@ impl Editor {
         let shrink = half_trans * Mat4::from_scale(Vec3::splat(1.0)) * half_trans.inverse();
 
         for cube in grid.iter() {
-            let local_translation = Mat4::from_translation(cube.pos.as_vec3());
-            let cube_transform = self.global_transform * local_translation * shrink;
+            let model_transform = Mat4::from_translation(cube.pos.as_vec3()) * shrink;
+            let total_transform = self.camera_transform * model_transform;
 
             let color = if self.highlighted_cube == Some(cube.pos) {
                 Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
@@ -479,13 +512,13 @@ impl Editor {
                 Some(cube.color)
             };
 
-            gpu.render_mesh(&mesh, &cube_transform, color);
+            gpu.render_mesh(&mesh, &total_transform, color);
         }
 
         if let Some(proposed_cube) = self.proposed_cube {
-            let local_translation = Mat4::from_translation(proposed_cube.as_vec3());
-            let cube_transform = self.global_transform * local_translation * shrink;
-            gpu.render_mesh(&mesh, &cube_transform, Some(Vec4::new(0.0, 1.0, 1.0, 1.0)));
+            let model_transform = Mat4::from_translation(proposed_cube.as_vec3()) * shrink;
+            let total_transform = self.camera_transform * model_transform;
+            gpu.render_mesh(&mesh, &total_transform, Some(Vec4::new(0.0, 1.0, 1.0, 1.0)));
         }
     }
 }
@@ -536,18 +569,22 @@ impl Viewer {
         ];
 
         let mesh = Mesh::new(&verts, Some(&intensities), None, gpu);
-        let mat = Mat4::from_translation(global_translation.extend(0.5))
-            * Mat4::from_scale(Vec3::splat(0.01));
+        let camera_transform = Mat4::from_translation(global_translation.extend(0.5))
+            * Mat4::from_scale(Vec3::splat(0.005));
 
         let xhat = Vec3::new(2.0, 1.0, 1.0);
         let yhat = Vec3::new(0.0, 3.0, -1.0); // TODO: could do 0,3,0 instead and handle the depth using the mesh.
         let zhat = Vec3::new(-2.0, 1.0, 1.0);
-        let r = Mat3::from_cols(xhat, yhat, zhat);
+        let isometric_transform_cpu = Mat3::from_cols(xhat, yhat, zhat);
 
         for cube in grid.iter() {
-            let p = r * cube.pos.as_vec3();
-            let cube_mat = Mat4::from_translation(p);
-            gpu.render_mesh(&mesh, &(mat * cube_mat), Some(cube.color));
+            let isometric_pos = isometric_transform_cpu * cube.pos.as_vec3();
+            let model_transform = Mat4::from_translation(isometric_pos);
+            gpu.render_mesh(
+                &mesh,
+                &(camera_transform * model_transform),
+                Some(cube.color),
+            );
         }
     }
 }

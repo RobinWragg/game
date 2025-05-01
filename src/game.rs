@@ -16,11 +16,13 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Game {
+        let mut grid = Grid::new();
+        grid.hollow_out();
         Self {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
-            grid: Grid::new(),
+            grid,
             grid_editor: Editor::new(),
             grid_viewer: Viewer::new(),
             events_for_next_frame: VecDeque::new(),

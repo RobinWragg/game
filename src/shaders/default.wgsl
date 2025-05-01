@@ -24,7 +24,7 @@ var<uniform> uniform: Uniform;
 @vertex
 fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFrag {
     var out: VertToFrag;
-    out.pos = uniform.matrix * vec4<f32>(vert.pos.x, vert.pos.y, vert.pos.z, 1.0);
+    out.pos = uniform.matrix * vec4<f32>(vert.pos, 1.0);
     out.normal = vert.normal;
     out.color = srgb_to_linear(vert.color);
 
@@ -57,7 +57,7 @@ fn fs_main(in: VertToFrag) -> @location(0) vec4<f32> {
     let pre_light_color = tex_color * in.color * srgb_to_linear(uniform.color);
 
     if LIGHTING_ENABLED {
-        let light = dot(in.normal, normalize(vec3<f32>(0.1, 0.2, 0.3))) / 2.0 + 0.5;
+        let light = dot(in.normal, normalize(vec3<f32>(0.0, -1.0, 0.0))) / 2.0 + 0.5;
         let post_light_color = vec4<f32>(pre_light_color.rgb * light, pre_light_color.a);
         return post_light_color;
     } else {

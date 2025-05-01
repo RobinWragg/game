@@ -1,4 +1,4 @@
-use crate::grid::{Atom, EditorState};
+use crate::grid::{Atom2d, EditorState};
 use crate::math::transform_2d;
 use crate::prelude::*;
 use egui::epaint::{image::ImageData, textures::*};
@@ -134,17 +134,21 @@ impl Debugger {
                     let radio_atom = self.editor_state.current_atom;
                     ui.radio_value(
                         &mut self.editor_state.current_atom,
-                        if let Atom::Gas(p) = radio_atom {
-                            Atom::Gas(p)
+                        if let Atom2d::Gas(p) = radio_atom {
+                            Atom2d::Gas(p)
                         } else {
-                            Atom::Gas(0.0)
+                            Atom2d::Gas(0.0)
                         },
                         "Gas",
                     );
-                    ui.radio_value(&mut self.editor_state.current_atom, Atom::Solid, "Solid");
-                    ui.radio_value(&mut self.editor_state.current_atom, Atom::Liquid, "Liquid");
+                    ui.radio_value(&mut self.editor_state.current_atom, Atom2d::Solid, "Solid");
+                    ui.radio_value(
+                        &mut self.editor_state.current_atom,
+                        Atom2d::Liquid,
+                        "Liquid",
+                    );
                 });
-                if let Atom::Gas(pressure) = &mut self.editor_state.current_atom {
+                if let Atom2d::Gas(pressure) = &mut self.editor_state.current_atom {
                     ui.add(egui::Slider::new(pressure, -100.0..=100.0).text("Pressure"));
                 }
 
