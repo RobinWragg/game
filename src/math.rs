@@ -142,7 +142,11 @@ fn plane_ray_intersection(
     return None;
 }
 
-fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: IVec3) -> Option<Vec3> {
+pub fn ray_unitcube_intersection(
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    cube_corner: IVec3,
+) -> Option<Vec3> {
     let inv_dir = ray_dir.recip();
     let cube_corner = cube_corner.as_vec3();
 
@@ -164,60 +168,6 @@ fn ray_unitcube_intersection(ray_origin: Vec3, ray_dir: Vec3, cube_corner: IVec3
     } else {
         None
     }
-}
-
-pub fn closest_ray_grid_intersection<'a>(
-    ray_origin: Vec3,
-    ray_dir: Vec3,
-    cubes: impl IntoIterator<Item = &'a IVec3>,
-) -> Option<(IVec3, Vec3)> {
-    let mut intersections = vec![];
-
-    for cube in cubes {
-        if let Some(intersection) = ray_unitcube_intersection(ray_origin, ray_dir, *cube) {
-            intersections.push((*cube, intersection));
-        }
-    }
-
-    if intersections.is_empty() {
-        return None;
-    }
-
-    let half = Vec3::splat(0.5);
-    let sorter = |a: &(IVec3, Vec3), b: &(IVec3, Vec3)| {
-        let a_dist = ray_origin.distance(a.1);
-        let b_dist = ray_origin.distance(b.1);
-        a_dist.partial_cmp(&b_dist).unwrap()
-    };
-
-    intersections.sort_by(sorter);
-    Some(intersections[0])
-}
-
-pub fn adjacent_cube(origin_cube: IVec3, nearby_pos: Vec3) -> IVec3 {
-    let origin = origin_cube.as_vec3() + Vec3::splat(0.5);
-    let mut candidates = [
-        origin + Vec3::new(-1.0, 0.0, 0.0),
-        origin + Vec3::new(1.0, 0.0, 0.0),
-        origin + Vec3::new(0.0, -1.0, 0.0),
-        origin + Vec3::new(0.0, 1.0, 0.0),
-        origin + Vec3::new(0.0, 0.0, -1.0),
-        origin + Vec3::new(0.0, 0.0, 1.0),
-    ];
-
-    let sorter = |a: &Vec3, b: &Vec3| {
-        let a_dist = nearby_pos.distance(*a);
-        let b_dist = nearby_pos.distance(*b);
-        a_dist.partial_cmp(&b_dist).unwrap()
-    };
-
-    candidates.sort_by(sorter);
-    let closest = candidates[0];
-    IVec3::new(
-        closest.x.floor() as i32,
-        closest.y.floor() as i32,
-        closest.z.floor() as i32,
-    )
 }
 
 #[cfg(test)]

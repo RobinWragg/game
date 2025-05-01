@@ -1,4 +1,4 @@
-use crate::math::{adjacent_cube, closest_ray_grid_intersection, cube_triangles, transform_2d};
+use crate::math::{cube_triangles, ray_unitcube_intersection, transform_2d};
 use crate::prelude::*;
 use dot_vox;
 use serde::{Deserialize, Serialize};
@@ -6,6 +6,60 @@ use std::fs::File;
 use std::io::{Read, Write};
 
 pub const GRID_SIZE: usize = 4;
+
+fn adjacent_atom(origin_atom: IVec3, nearby_pos: Vec3) -> IVec3 {
+    let origin = origin_atom.as_vec3() + Vec3::splat(0.5);
+    let mut candidates = [
+        origin + Vec3::new(-1.0, 0.0, 0.0),
+        origin + Vec3::new(1.0, 0.0, 0.0),
+        origin + Vec3::new(0.0, -1.0, 0.0),
+        origin + Vec3::new(0.0, 1.0, 0.0),
+        origin + Vec3::new(0.0, 0.0, -1.0),
+        origin + Vec3::new(0.0, 0.0, 1.0),
+    ];
+
+    let sorter = |a: &Vec3, b: &Vec3| {
+        let a_dist = nearby_pos.distance(*a);
+        let b_dist = nearby_pos.distance(*b);
+        a_dist.partial_cmp(&b_dist).unwrap()
+    };
+
+    candidates.sort_by(sorter);
+    let closest = candidates[0];
+    IVec3::new(
+        closest.x.floor() as i32,
+        closest.y.floor() as i32,
+        closest.z.floor() as i32,
+    )
+}
+
+fn closest_ray_grid_intersection<'a>(
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    atoms: impl IntoIterator<Item = &'a IVec3>,
+) -> Option<(IVec3, Vec3)> {
+    let mut intersections = vec![];
+
+    for atom in atoms {
+        if let Some(intersection) = ray_unitcube_intersection(ray_origin, ray_dir, *atom) {
+            intersections.push((*atom, intersection));
+        }
+    }
+
+    if intersections.is_empty() {
+        return None;
+    }
+
+    let half = Vec3::splat(0.5);
+    let sorter = |a: &(IVec3, Vec3), b: &(IVec3, Vec3)| {
+        let a_dist = ray_origin.distance(a.1);
+        let b_dist = ray_origin.distance(b.1);
+        a_dist.partial_cmp(&b_dist).unwrap()
+    };
+
+    intersections.sort_by(sorter);
+    Some(intersections[0])
+}
 
 // TODO: use a hashmap instead?
 #[derive(Default, Copy, Clone)]
@@ -240,13 +294,13 @@ impl Grid2d {
 }
 
 #[derive(Clone)]
-pub struct Cube {
+pub struct Atom {
     pub pos: IVec3,
     pub color: Vec4,
 }
 
 pub struct Grid {
-    cubes: Vec<Cube>,
+    atoms: Vec<Atom>,
 }
 
 impl Grid {
@@ -257,10 +311,10 @@ impl Grid {
             let model = &vox.models[0];
             dbg!(model.voxels.len());
 
-            let mut cubes: Vec<Cube> = model
+            let mut atoms: Vec<Atom> = model
                 .voxels
                 .iter()
-                .map(|voxel| Cube {
+                .map(|voxel| Atom {
                     pos: IVec3::new(voxel.x as i32, voxel.z as i32, voxel.y as i32),
                     color: Vec4::new(
                         vox.palette[voxel.i as usize].r as f32 / 255.0,
@@ -270,113 +324,113 @@ impl Grid {
                     ),
                 })
                 .collect();
-            // cubes = cubes.split_at(8 * 8 * 8).0.to_vec();
+            // atoms = atoms.split_at(8 * 8 * 8).0.to_vec();
 
-            // Center the cubes around the origin
-            cubes = {
+            // Center the atoms around the origin
+            atoms = {
                 let mut minimum = IVec3::splat(i32::MAX);
                 let mut maximum = IVec3::splat(i32::MIN);
-                for cube in &cubes {
-                    minimum = cube.pos.min(minimum);
-                    maximum = cube.pos.max(maximum);
+                for atom in &atoms {
+                    minimum = atom.pos.min(minimum);
+                    maximum = atom.pos.max(maximum);
                 }
                 let center = (maximum + minimum) / 2;
-                for cube in &mut cubes {
-                    cube.pos -= center;
+                for atom in &mut atoms {
+                    atom.pos -= center;
                 }
 
                 // axes
                 for i in 1..32 {
-                    cubes.push(Cube {
+                    atoms.push(Atom {
                         pos: IVec3::new(i, 0, 0),
                         color: Vec4::new(1.0, 0.0, 0.0, 1.0),
                     });
-                    cubes.push(Cube {
+                    atoms.push(Atom {
                         pos: IVec3::new(0, i, 0),
                         color: Vec4::new(0.0, 1.0, 0.0, 1.0),
                     });
-                    cubes.push(Cube {
+                    atoms.push(Atom {
                         pos: IVec3::new(0, 0, i),
                         color: Vec4::new(0.0, 0.0, 1.0, 1.0),
                     });
                 }
-                cubes
+                atoms
             };
 
-            Self { cubes }
+            Self { atoms }
         } else {
-            Self { cubes: vec![] }
+            Self { atoms: vec![] }
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.cubes.is_empty()
+        self.atoms.is_empty()
     }
 
     pub fn add(&mut self, pos: IVec3) {
-        debug_assert!(!self.contains(&pos), "Cube already exists at this position");
-        self.cubes.push(Cube {
+        debug_assert!(!self.contains(&pos), "Atom already exists at this position");
+        self.atoms.push(Atom {
             pos,
             color: Vec4::new(1.0, rand::random::<f32>(), rand::random::<f32>(), 1.0),
         });
     }
 
     pub fn overwrite(&mut self, pos: IVec3) {
-        debug_assert!(self.contains(&pos), "Cube doesn't exist at this position");
-        self.cubes
+        debug_assert!(self.contains(&pos), "Atom doesn't exist at this position");
+        self.atoms
             .iter_mut()
-            .find(|cube| cube.pos == pos)
+            .find(|atom| atom.pos == pos)
             .unwrap()
             .pos = pos;
     }
 
     pub fn contains(&self, pos: &IVec3) -> bool {
-        self.cubes.iter().any(|cube| cube.pos == *pos)
+        self.atoms.iter().any(|atom| atom.pos == *pos)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Cube> {
-        self.cubes.iter()
+    pub fn iter(&self) -> impl Iterator<Item = &Atom> {
+        self.atoms.iter()
     }
 
     pub fn positions(&self) -> impl Iterator<Item = &IVec3> {
-        self.cubes.iter().map(|cube| &cube.pos)
+        self.atoms.iter().map(|atom| &atom.pos)
     }
 
     pub fn remove(&mut self, pos: IVec3) {
-        // TODO: This will check all cubes even if the cube is found early.
-        self.cubes.retain(|cube| cube.pos != pos);
+        // TODO: This will check all atoms even if the atom is found early.
+        self.atoms.retain(|atom| atom.pos != pos);
     }
 
     pub fn hollow_out(&mut self) {
-        let cubes_2 = self.cubes.clone();
-        self.cubes.retain(|a| {
-            cubes_2
+        let atoms_2 = self.atoms.clone();
+        self.atoms.retain(|a| {
+            atoms_2
                 .iter()
                 .find(|b| b.pos.x == a.pos.x + 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
                 .is_none()
-                || cubes_2
+                || atoms_2
                     .iter()
                     .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y + 1 && b.pos.z == a.pos.z)
                     .is_none()
-                || cubes_2
+                || atoms_2
                     .iter()
                     .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z + 1)
                     .is_none()
-                || cubes_2
+                || atoms_2
                     .iter()
                     .find(|b| b.pos.x == a.pos.x - 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
                     .is_none()
-                || cubes_2
+                || atoms_2
                     .iter()
                     .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y - 1 && b.pos.z == a.pos.z)
                     .is_none()
-                || cubes_2
+                || atoms_2
                     .iter()
                     .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z - 1)
                     .is_none()
         });
 
-        println!("Hollowed out {} cubes", cubes_2.len() - self.cubes.len());
+        println!("Hollowed out {} atoms", atoms_2.len() - self.atoms.len());
     }
 }
 
@@ -384,8 +438,8 @@ pub struct Editor {
     camera_transform: Mat4, // Sans aspect ratio correct for now
     rotation: Vec2,
     mouse_pos: Option<Vec2>,
-    highlighted_cube: Option<IVec3>,
-    proposed_cube: Option<IVec3>,
+    highlighted_atom: Option<IVec3>,
+    proposed_atom: Option<IVec3>,
 }
 
 impl Editor {
@@ -394,14 +448,14 @@ impl Editor {
             camera_transform: Mat4::IDENTITY,
             rotation: Vec2::ZERO,
             mouse_pos: None,
-            highlighted_cube: None,
-            proposed_cube: None,
+            highlighted_atom: None,
+            proposed_atom: None,
         }
     }
 
     pub fn update(&mut self, grid: &mut Grid, events: &mut VecDeque<Event>) {
-        let mut should_add_cube = false;
-        let mut should_remove_cube = false;
+        let mut should_add_atom = false;
+        let mut should_remove_atom = false;
         let mut scroll_delta = Vec2::ZERO;
 
         events.retain(|event| match event {
@@ -414,11 +468,11 @@ impl Editor {
                 false
             }
             Event::LeftClickPressed(_) => {
-                should_add_cube = true;
+                should_add_atom = true;
                 false
             }
             Event::RightClickPressed(_) => {
-                should_remove_cube = true;
+                should_remove_atom = true;
                 false
             }
             _ => true,
@@ -459,10 +513,10 @@ impl Editor {
                 .xyz()
                 .normalize();
 
-            if let Some((cube, intersection_location)) =
+            if let Some((atom, intersection_location)) =
                 closest_ray_grid_intersection(ray_origin, ray_direction, grid.positions())
             {
-                Some((cube, intersection_location))
+                Some((atom, intersection_location))
             } else {
                 None
             }
@@ -470,26 +524,26 @@ impl Editor {
             None
         };
 
-        if let Some((highlighted_cube, intersection_location)) = selection {
-            self.highlighted_cube = Some(highlighted_cube);
-            self.proposed_cube = Some(adjacent_cube(highlighted_cube, intersection_location));
-            if self.highlighted_cube == self.proposed_cube {
-                self.proposed_cube = None;
+        if let Some((highlighted_atom, intersection_location)) = selection {
+            self.highlighted_atom = Some(highlighted_atom);
+            self.proposed_atom = Some(adjacent_atom(highlighted_atom, intersection_location));
+            if self.highlighted_atom == self.proposed_atom {
+                self.proposed_atom = None;
             }
         } else {
-            self.highlighted_cube = None;
-            self.proposed_cube = None;
+            self.highlighted_atom = None;
+            self.proposed_atom = None;
         }
 
-        if should_add_cube {
-            if let Some(proposed_cube) = self.proposed_cube {
-                if !grid.contains(&proposed_cube) {
-                    grid.add(proposed_cube);
+        if should_add_atom {
+            if let Some(proposed_atom) = self.proposed_atom {
+                if !grid.contains(&proposed_atom) {
+                    grid.add(proposed_atom);
                 }
             }
-        } else if should_remove_cube {
-            if let Some(highlighted_cube) = self.highlighted_cube {
-                grid.remove(highlighted_cube);
+        } else if should_remove_atom {
+            if let Some(highlighted_atom) = self.highlighted_atom {
+                grid.remove(highlighted_atom);
             }
         }
     }
@@ -502,21 +556,21 @@ impl Editor {
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let shrink = half_trans * Mat4::from_scale(Vec3::splat(1.0)) * half_trans.inverse();
 
-        for cube in grid.iter() {
-            let model_transform = Mat4::from_translation(cube.pos.as_vec3()) * shrink;
+        for atom in grid.iter() {
+            let model_transform = Mat4::from_translation(atom.pos.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
 
-            let color = if self.highlighted_cube == Some(cube.pos) {
+            let color = if self.highlighted_atom == Some(atom.pos) {
                 Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
             } else {
-                Some(cube.color)
+                Some(atom.color)
             };
 
             gpu.render_mesh(&mesh, &total_transform, color);
         }
 
-        if let Some(proposed_cube) = self.proposed_cube {
-            let model_transform = Mat4::from_translation(proposed_cube.as_vec3()) * shrink;
+        if let Some(proposed_atom) = self.proposed_atom {
+            let model_transform = Mat4::from_translation(proposed_atom.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
             gpu.render_mesh(&mesh, &total_transform, Some(Vec4::new(0.0, 1.0, 1.0, 1.0)));
         }
@@ -577,13 +631,13 @@ impl Viewer {
         let zhat = Vec3::new(-2.0, 1.0, 1.0);
         let isometric_transform_cpu = Mat3::from_cols(xhat, yhat, zhat);
 
-        for cube in grid.iter() {
-            let isometric_pos = isometric_transform_cpu * cube.pos.as_vec3();
+        for atom in grid.iter() {
+            let isometric_pos = isometric_transform_cpu * atom.pos.as_vec3();
             let model_transform = Mat4::from_translation(isometric_pos);
             gpu.render_mesh(
                 &mesh,
                 &(camera_transform * model_transform),
-                Some(cube.color),
+                Some(atom.color),
             );
         }
     }
