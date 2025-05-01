@@ -1,4 +1,4 @@
-use crate::grid::{Atom2d, EditorState};
+use crate::grid::grid2d::{Atom2d, EditorState};
 use crate::math::transform_2d;
 use crate::prelude::*;
 use egui::epaint::{image::ImageData, textures::*};

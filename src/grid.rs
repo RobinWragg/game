@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
-pub const GRID_SIZE: usize = 4;
+pub mod grid2d;
 
 fn adjacent_atom(origin_atom: IVec3, nearby_pos: Vec3) -> IVec3 {
     let origin = origin_atom.as_vec3() + Vec3::splat(0.5);
@@ -61,242 +61,36 @@ fn closest_ray_grid_intersection<'a>(
     Some(intersections[0])
 }
 
-// TODO: use a hashmap instead?
-#[derive(Default, Copy, Clone)]
-pub struct EditorState {
-    pub current_atom: Atom2d,
-    pub should_reload: bool,
-    pub is_playing: bool,
-    pub should_step: bool,
-}
-
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Atom2d {
-    Gas(f32),
-    Solid,
+#[derive(Clone)]
+enum AtomVariant {
+    Solid(Vec4), // Color. TODO: f32 is gross overkill here.
     Liquid,
-}
-
-impl Default for Atom2d {
-    fn default() -> Self {
-        Atom2d::Gas(0.0)
-    }
-}
-
-pub struct Grid2d {
-    atoms: Vec<Vec<Atom2d>>,
-    transform: Mat4,
-    mover: f32,
-}
-
-impl Grid2d {
-    fn new() -> Self {
-        let scale = 0.1;
-        let translate_z = 0.5; // The viable range is 0 to 1, so put it in the middle.
-        Self {
-            transform: Mat4::from_translation(Vec3::new(0.0, 0.0, translate_z))
-                * Mat4::from_scale(Vec3::new(scale, scale, scale)),
-            atoms: vec![vec![Atom2d::default(); GRID_SIZE]; GRID_SIZE],
-            mover: 0.0,
-        }
-    }
-
-    pub fn load() -> Self {
-        fn load_inner() -> Result<Vec<Vec<Atom2d>>, std::io::Error> {
-            let mut file = File::open("nopush/grid_save.json")?;
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)?;
-            Ok(serde_json::from_str(&contents)?)
-        }
-
-        let mut grid = Self::new();
-
-        grid.atoms = match load_inner() {
-            Ok(atoms) => {
-                println!("Loading atoms from file");
-                atoms
-            }
-            Err(_) => {
-                println!("Creating new atoms");
-                vec![vec![Atom2d::default(); GRID_SIZE]; GRID_SIZE]
-            }
-        };
-
-        grid
-    }
-
-    pub fn modify_under_path(&mut self, start: &Vec2, end: &Vec2, editor: &EditorState) {
-        // TODO: I'm not sure when the best time to transform from Vec2 to (usize, usize) is. I think this fn shouldn't be aware of the editor either. The pub interface to the grid can convert Vec2 to (usize, usize) and inspect the editor before getting here.
-        let start = transform_2d(&start, &self.transform.inverse());
-        let end = transform_2d(end, &self.transform.inverse());
-
-        let start = (
-            start.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-            start.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-        );
-        let end = (
-            end.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-            end.y.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
-        );
-
-        for (x, y) in Grid2d::atoms_on_path(start, end) {
-            self.atoms[x][y] = editor.current_atom;
-        }
-    }
-
-    pub fn save(&self) {
-        let json = serde_json::to_string(&self.atoms).expect("Failed to serialize grid");
-
-        let mut file = File::create("nopush/grid_save.json").expect("Failed to create file");
-        file.write_all(json.as_bytes())
-            .expect("Failed to write to file");
-
-        println!("Grid saved to nopush/grid_save.json");
-    }
-
-    fn atoms_on_path(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
-        let mut path: Vec<(i32, i32)> = vec![];
-
-        let mut mover = (start.0 as i32, start.1 as i32);
-        let end = (end.0 as i32, end.1 as i32);
-
-        path.push(mover);
-
-        loop {
-            if mover == end {
-                break;
-            }
-
-            if (mover.0 - end.0).abs() > (mover.1 - end.1).abs() {
-                if mover.0 < end.0 {
-                    mover.0 += 1;
-                } else {
-                    mover.0 -= 1;
-                }
-            } else {
-                if mover.1 < end.1 {
-                    mover.1 += 1;
-                } else {
-                    mover.1 -= 1;
-                }
-            }
-
-            path.push(mover);
-        }
-
-        path.into_iter()
-            .map(|(x, y)| (x as usize, y as usize))
-            .collect::<Vec<(usize, usize)>>()
-    }
-
-    fn mut_gas_pressures(&mut self, x: usize, y: usize) -> Vec<&mut f32> {
-        let mut pressures = vec![];
-
-        let (column_a, column_b) = self.atoms.split_at_mut(x + 1);
-        let (cell_a, cell_b) = column_a[x].split_at_mut(y + 1);
-        let (cell_c, cell_d) = column_b[0].split_at_mut(y + 1);
-
-        if let Atom2d::Gas(pressure) = &mut cell_a[y] {
-            pressures.push(pressure);
-        }
-        if let Atom2d::Gas(pressure) = &mut cell_b[0] {
-            pressures.push(pressure);
-        }
-        if let Atom2d::Gas(pressure) = &mut cell_c[y] {
-            pressures.push(pressure);
-        }
-        if let Atom2d::Gas(pressure) = &mut cell_d[0] {
-            pressures.push(pressure);
-        }
-
-        pressures
-    }
-
-    pub fn update(&mut self, editor: &EditorState) {
-        if editor.should_reload {
-            self.atoms = Self::load().atoms;
-        }
-
-        if editor.is_playing || editor.should_step {
-            self.update_gas_with_2x2_equilibrium();
-        }
-
-        self.mover += 0.01;
-    }
-
-    fn update_gas_with_2x2_equilibrium(&mut self) {
-        debug_assert!(GRID_SIZE % 2 == 0);
-
-        let mut reach_local_equilibrium = |x: usize, y: usize| {
-            let pressures = self.mut_gas_pressures(x, y);
-
-            let mut pressure_total = 0.0;
-            for pressure in &pressures {
-                pressure_total += **pressure;
-            }
-
-            let divided_total = pressure_total / pressures.len() as f32;
-
-            for pressure in pressures {
-                *pressure = divided_total;
-            }
-        };
-
-        for x in (0..GRID_SIZE).step_by(2) {
-            for y in (0..GRID_SIZE).step_by(2) {
-                reach_local_equilibrium(x, y);
-            }
-        }
-
-        for x in (1..GRID_SIZE - 1).step_by(2) {
-            for y in (1..GRID_SIZE - 1).step_by(2) {
-                reach_local_equilibrium(x, y);
-            }
-        }
-
-        // Erase edges
-        for x in 0..GRID_SIZE {
-            self.atoms[x][0] = Atom2d::Gas(0.0);
-            self.atoms[x][GRID_SIZE - 1] = Atom2d::Gas(0.0);
-        }
-        for y in 0..GRID_SIZE {
-            self.atoms[0][y] = Atom2d::Gas(0.0);
-            self.atoms[GRID_SIZE - 1][y] = Atom2d::Gas(0.0);
-        }
-    }
-
-    pub fn render_2d(&self, gpu: &mut Gpu) {
-        gpu.set_render_features(Gpu::FEATURE_DEPTH);
-
-        let verts = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.9, 0.0),
-            Vec2::new(0.0, 0.9),
-            Vec2::new(0.0, 0.9),
-            Vec2::new(0.9, 0.0),
-            Vec2::new(0.9, 0.9),
-        ];
-
-        let mesh = Mesh::new_2d(&verts, None, None, gpu);
-
-        for x in 0..GRID_SIZE {
-            for y in 0..GRID_SIZE {
-                let color = match self.atoms[x][y] {
-                    Atom2d::Gas(v) => Vec4::new(v * 0.01, 0.0, 1.0 - v * 0.01, 1.0),
-                    Atom2d::Solid => Vec4::new(0.0, 1.0, 0.0, 1.0),
-                    Atom2d::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
-                };
-                let m = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0));
-                gpu.render_mesh(&mesh, &(self.transform * m), Some(color));
-            }
-        }
-    }
+    LiquidSource(IVec3),
+    Gas,
 }
 
 #[derive(Clone)]
-pub struct Atom {
-    pub pos: IVec3,
-    pub color: Vec4,
+struct Atom {
+    pub pos: IVec3, // TODO: i16 or even i8 might be ok here.
+    pub variant: AtomVariant,
+}
+
+impl Atom {
+    fn with_color(pos: IVec3, color: Vec4) -> Self {
+        Self {
+            pos,
+            variant: AtomVariant::Solid(color),
+        }
+    }
+
+    fn color(&self) -> Vec4 {
+        match &self.variant {
+            AtomVariant::Solid(color) => *color,
+            AtomVariant::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
+            AtomVariant::LiquidSource(_) => Vec4::new(1.0, 1.0, 1.0, 1.0),
+            AtomVariant::Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
+        }
+    }
 }
 
 pub struct Grid {
@@ -314,14 +108,16 @@ impl Grid {
             let mut atoms: Vec<Atom> = model
                 .voxels
                 .iter()
-                .map(|voxel| Atom {
-                    pos: IVec3::new(voxel.x as i32, voxel.z as i32, voxel.y as i32),
-                    color: Vec4::new(
-                        vox.palette[voxel.i as usize].r as f32 / 255.0,
-                        vox.palette[voxel.i as usize].g as f32 / 255.0,
-                        vox.palette[voxel.i as usize].b as f32 / 255.0,
-                        1.0,
-                    ),
+                .map(|voxel| {
+                    Atom::with_color(
+                        IVec3::new(voxel.x as i32, voxel.z as i32, voxel.y as i32),
+                        Vec4::new(
+                            vox.palette[voxel.i as usize].r as f32 / 255.0,
+                            vox.palette[voxel.i as usize].g as f32 / 255.0,
+                            vox.palette[voxel.i as usize].b as f32 / 255.0,
+                            1.0,
+                        ),
+                    )
                 })
                 .collect();
             // atoms = atoms.split_at(8 * 8 * 8).0.to_vec();
@@ -341,18 +137,18 @@ impl Grid {
 
                 // axes
                 for i in 1..32 {
-                    atoms.push(Atom {
-                        pos: IVec3::new(i, 0, 0),
-                        color: Vec4::new(1.0, 0.0, 0.0, 1.0),
-                    });
-                    atoms.push(Atom {
-                        pos: IVec3::new(0, i, 0),
-                        color: Vec4::new(0.0, 1.0, 0.0, 1.0),
-                    });
-                    atoms.push(Atom {
-                        pos: IVec3::new(0, 0, i),
-                        color: Vec4::new(0.0, 0.0, 1.0, 1.0),
-                    });
+                    atoms.push(Atom::with_color(
+                        IVec3::new(i, 0, 0),
+                        Vec4::new(1.0, 0.0, 0.0, 1.0),
+                    ));
+                    atoms.push(Atom::with_color(
+                        IVec3::new(0, i, 0),
+                        Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    ));
+                    atoms.push(Atom::with_color(
+                        IVec3::new(0, 0, i),
+                        Vec4::new(0.0, 0.0, 1.0, 1.0),
+                    ));
                 }
                 atoms
             };
@@ -363,19 +159,19 @@ impl Grid {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.atoms.is_empty()
     }
 
-    pub fn add(&mut self, pos: IVec3) {
+    fn add(&mut self, pos: IVec3) {
         debug_assert!(!self.contains(&pos), "Atom already exists at this position");
-        self.atoms.push(Atom {
+        self.atoms.push(Atom::with_color(
             pos,
-            color: Vec4::new(1.0, rand::random::<f32>(), rand::random::<f32>(), 1.0),
-        });
+            Vec4::new(1.0, rand::random::<f32>(), rand::random::<f32>(), 1.0),
+        ));
     }
 
-    pub fn overwrite(&mut self, pos: IVec3) {
+    fn overwrite(&mut self, pos: IVec3) {
         debug_assert!(self.contains(&pos), "Atom doesn't exist at this position");
         self.atoms
             .iter_mut()
@@ -384,19 +180,19 @@ impl Grid {
             .pos = pos;
     }
 
-    pub fn contains(&self, pos: &IVec3) -> bool {
+    fn contains(&self, pos: &IVec3) -> bool {
         self.atoms.iter().any(|atom| atom.pos == *pos)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Atom> {
+    fn iter(&self) -> impl Iterator<Item = &Atom> {
         self.atoms.iter()
     }
 
-    pub fn positions(&self) -> impl Iterator<Item = &IVec3> {
+    fn positions(&self) -> impl Iterator<Item = &IVec3> {
         self.atoms.iter().map(|atom| &atom.pos)
     }
 
-    pub fn remove(&mut self, pos: IVec3) {
+    fn remove(&mut self, pos: IVec3) {
         // TODO: This will check all atoms even if the atom is found early.
         self.atoms.retain(|atom| atom.pos != pos);
     }
@@ -563,7 +359,7 @@ impl Editor {
             let color = if self.highlighted_atom == Some(atom.pos) {
                 Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
             } else {
-                Some(atom.color)
+                Some(atom.color())
             };
 
             gpu.render_mesh(&mesh, &total_transform, color);
@@ -637,19 +433,8 @@ impl Viewer {
             gpu.render_mesh(
                 &mesh,
                 &(camera_transform * model_transform),
-                Some(atom.color),
+                Some(atom.color()),
             );
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_zero_path() {
-        let path = Grid2d::atoms_on_path((2, 2), (2, 2));
-        assert_eq!(path, vec![(2, 2)]);
     }
 }
