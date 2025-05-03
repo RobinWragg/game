@@ -4,6 +4,16 @@ use dot_vox;
 
 pub mod grid2d;
 
+#[derive(Clone)]
+enum Atom {
+    Solid(Vec4), // Color. TODO: f32 is gross overkill here.
+    Liquid,
+    LiquidSource(IVec3),
+    Gas,
+}
+
+use Atom::*;
+
 fn transtellar_list() -> Vec<AtomWithPos> {
     let vox = dot_vox::load("nopush/Transtellar/Transtellar.vox").unwrap();
     assert!(vox.models.len() == 1);
@@ -49,6 +59,36 @@ fn transtellar_list() -> Vec<AtomWithPos> {
     atoms
 }
 
+fn hollow_out(atoms: &mut Vec<AtomWithPos>) {
+    let atoms_2 = atoms.clone();
+    atoms.retain(|a| {
+        atoms_2
+            .iter()
+            .find(|b| b.pos.x == a.pos.x + 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
+            .is_none()
+            || atoms_2
+                .iter()
+                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y + 1 && b.pos.z == a.pos.z)
+                .is_none()
+            || atoms_2
+                .iter()
+                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z + 1)
+                .is_none()
+            || atoms_2
+                .iter()
+                .find(|b| b.pos.x == a.pos.x - 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
+                .is_none()
+            || atoms_2
+                .iter()
+                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y - 1 && b.pos.z == a.pos.z)
+                .is_none()
+            || atoms_2
+                .iter()
+                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z - 1)
+                .is_none()
+    });
+}
+
 fn adjacent_atom(origin_atom: UVec3, nearby_pos: Vec3) -> UVec3 {
     let origin = origin_atom.as_vec3() + Vec3::splat(0.5);
     let mut candidates = [
@@ -74,13 +114,13 @@ fn adjacent_atom(origin_atom: UVec3, nearby_pos: Vec3) -> UVec3 {
 fn closest_ray_grid_intersection<'a>(
     ray_origin: Vec3,
     ray_dir: Vec3,
-    atoms: impl IntoIterator<Item = &'a UVec3>,
+    atoms: impl IntoIterator<Item = UVec3>,
 ) -> Option<(UVec3, Vec3)> {
     let mut intersections = vec![];
 
     for atom in atoms {
-        if let Some(intersection) = ray_unitcube_intersection(ray_origin, ray_dir, *atom) {
-            intersections.push((*atom, intersection));
+        if let Some(intersection) = ray_unitcube_intersection(ray_origin, ray_dir, atom) {
+            intersections.push((atom, intersection));
         }
     }
 
@@ -98,12 +138,13 @@ fn closest_ray_grid_intersection<'a>(
     Some(intersections[0])
 }
 
-#[derive(Clone)]
-enum Atom {
-    Solid(Vec4), // Color. TODO: f32 is gross overkill here.
-    Liquid,
-    LiquidSource(IVec3),
-    Gas,
+fn atom_color(atom: &Atom) -> Vec4 {
+    match atom {
+        Solid(color) => *color,
+        Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
+        LiquidSource(_) => Vec4::new(1.0, 1.0, 1.0, 1.0),
+        Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
+    }
 }
 
 #[derive(Clone)]
@@ -116,114 +157,47 @@ impl AtomWithPos {
     fn with_color(pos: UVec3, color: Vec4) -> Self {
         Self {
             pos,
-            variant: Atom::Solid(color),
-        }
-    }
-
-    fn color(&self) -> Vec4 {
-        match &self.variant {
-            Atom::Solid(color) => *color,
-            Atom::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
-            Atom::LiquidSource(_) => Vec4::new(1.0, 1.0, 1.0, 1.0),
-            Atom::Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
+            variant: Solid(color),
         }
     }
 }
 
 pub struct Grid {
-    atoms: Vec<AtomWithPos>,
+    atoms: Vec<Vec<Vec<Atom>>>,
 }
 
 impl Grid {
+    const SIZE: usize = 16;
+
     pub fn new() -> Self {
-        Self {
-            atoms: vec![
-                AtomWithPos {
-                    pos: UVec3::splat(0),
-                    variant: Atom::Solid(Vec4::new(0.5, 0.5, 0.5, 1.0)),
-                },
-                AtomWithPos {
-                    pos: UVec3::splat(15),
-                    variant: Atom::Solid(Vec4::splat(1.0)),
-                },
-                AtomWithPos {
-                    pos: UVec3::new(15, 0, 0),
-                    variant: Atom::Solid(Vec4::new(1.0, 0.0, 0.0, 1.0)),
-                },
-                AtomWithPos {
-                    pos: UVec3::new(0, 15, 0),
-                    variant: Atom::Solid(Vec4::new(0.0, 1.0, 0.0, 1.0)),
-                },
-                AtomWithPos {
-                    pos: UVec3::new(0, 0, 15),
-                    variant: Atom::Solid(Vec4::new(0.0, 0.0, 1.0, 1.0)),
-                },
-            ],
-        }
+        let mut atoms = vec![vec![vec![Gas; Self::SIZE]; Self::SIZE]; Self::SIZE];
+        atoms[0][0][0] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
+        atoms[Self::SIZE - 1][0][0] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
+        atoms[0][Self::SIZE - 1][0] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
+        atoms[0][0][Self::SIZE - 1] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
+        atoms[Self::SIZE - 1][Self::SIZE - 1][Self::SIZE - 1] = Solid(Vec4::splat(1.0));
+        Self { atoms }
     }
 
-    fn is_empty(&self) -> bool {
-        self.atoms.is_empty()
+    fn at(&self, pos: UVec3) -> &Atom {
+        &self.atoms[pos.x][pos.y][pos.z]
     }
 
-    fn add(&mut self, pos: UVec3) {
-        debug_assert!(
-            !self.contains(&pos),
-            "AtomWithPos already exists at this position"
-        );
-        self.atoms.push(AtomWithPos::with_color(
-            pos,
-            Vec4::new(1.0, rand::random::<f32>(), rand::random::<f32>(), 1.0),
-        ));
+    fn at_mut(&mut self, pos: UVec3) -> &mut Atom {
+        &mut self.atoms[pos.x][pos.y][pos.z]
     }
 
-    fn contains(&self, pos: &UVec3) -> bool {
-        self.atoms.iter().any(|atom| atom.pos == *pos)
-    }
+    fn positions(&self) -> impl Iterator<Item = UVec3> {
+        let x_size = self.atoms.len();
+        let y_size = self.atoms[0].len();
+        let z_size = self.atoms[0][0].len();
 
-    fn iter(&self) -> impl Iterator<Item = &AtomWithPos> {
-        self.atoms.iter()
-    }
-
-    fn positions(&self) -> impl Iterator<Item = &UVec3> {
-        self.atoms.iter().map(|atom| &atom.pos)
-    }
-
-    fn remove(&mut self, pos: UVec3) {
-        // TODO: This will check all atoms even if the atom is found early.
-        self.atoms.retain(|atom| atom.pos != pos);
-    }
-
-    pub fn hollow_out(&mut self) {
-        let atoms_2 = self.atoms.clone();
-        self.atoms.retain(|a| {
-            atoms_2
-                .iter()
-                .find(|b| b.pos.x == a.pos.x + 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
-                .is_none()
-                || atoms_2
-                    .iter()
-                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y + 1 && b.pos.z == a.pos.z)
-                    .is_none()
-                || atoms_2
-                    .iter()
-                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z + 1)
-                    .is_none()
-                || atoms_2
-                    .iter()
-                    .find(|b| b.pos.x == a.pos.x - 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
-                    .is_none()
-                || atoms_2
-                    .iter()
-                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y - 1 && b.pos.z == a.pos.z)
-                    .is_none()
-                || atoms_2
-                    .iter()
-                    .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z - 1)
-                    .is_none()
-        });
-
-        println!("Hollowed out {} atoms", atoms_2.len() - self.atoms.len());
+        let f = 0..x_size;
+        f.into_iter().flat_map(move |x| {
+            (0..y_size)
+                .into_iter()
+                .flat_map(move |y| (0..z_size).into_iter().map(move |z| UVec3::new(x, y, z)))
+        })
     }
 }
 
@@ -271,10 +245,6 @@ impl Editor {
             _ => true,
         });
 
-        if grid.is_empty() {
-            grid.add(UVec3::splat(0));
-        }
-
         // Rotation TODO: test whether this is framerate dependent
         {
             self.rotation += scroll_delta * -0.002;
@@ -290,12 +260,20 @@ impl Editor {
 
         self.camera_transform = {
             let depth_buffer_resolution = 0.01;
-            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.05, 0.05, depth_buffer_resolution));
+            let arbitrary_scale = 0.07;
+            let scale = Mat4::from_scale(Vec3::new(
+                arbitrary_scale,
+                arbitrary_scale,
+                depth_buffer_resolution,
+            ));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
+            let half_size = Grid::SIZE as f32 / 2.0;
+            let translate_to_center = Mat4::from_translation(Vec3::splat(-half_size));
             let rotation =
                 Mat4::from_rotation_x(self.rotation.y) * Mat4::from_rotation_y(self.rotation.x);
-            translate_z * arbitrary_scale * rotation
+
+            translate_z * scale * rotation * translate_to_center
         };
 
         let selection = if let Some(mouse_pos) = self.mouse_pos {
@@ -306,8 +284,13 @@ impl Editor {
                 .xyz()
                 .normalize();
 
+            let solid_positions = grid.positions().filter(|pos| match grid.at(*pos) {
+                Solid(_) => true,
+                _ => false,
+            });
+
             if let Some((atom, intersection_location)) =
-                closest_ray_grid_intersection(ray_origin, ray_direction, grid.positions())
+                closest_ray_grid_intersection(ray_origin, ray_direction, solid_positions)
             {
                 Some((atom, intersection_location))
             } else {
@@ -330,13 +313,11 @@ impl Editor {
 
         if should_add_atom {
             if let Some(proposed_atom) = self.proposed_atom {
-                if !grid.contains(&proposed_atom) {
-                    grid.add(proposed_atom);
-                }
+                *grid.at_mut(proposed_atom) = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
             }
         } else if should_remove_atom {
             if let Some(highlighted_atom) = self.highlighted_atom {
-                grid.remove(highlighted_atom);
+                *grid.at_mut(highlighted_atom) = Gas;
             }
         }
     }
@@ -347,16 +328,22 @@ impl Editor {
         let mesh = Mesh::new(&cube_triangles(), None, None, gpu);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
-        let shrink = half_trans * Mat4::from_scale(Vec3::splat(1.0)) * half_trans.inverse();
+        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.8)) * half_trans.inverse();
 
-        for atom in grid.iter() {
-            let model_transform = Mat4::from_translation(atom.pos.as_vec3()) * shrink;
+        for pos in grid.positions() {
+            let atom = grid.at(pos);
+
+            if let Gas = *atom {
+                continue;
+            }
+
+            let model_transform = Mat4::from_translation(pos.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
 
-            let color = if self.highlighted_atom == Some(atom.pos) {
+            let color = if self.highlighted_atom == Some(pos) {
                 Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
             } else {
-                Some(atom.color())
+                Some(atom_color(atom))
             };
 
             gpu.render_mesh(&mesh, &total_transform, color);
@@ -417,20 +404,26 @@ impl Viewer {
 
         let mesh = Mesh::new(&verts, Some(&intensities), None, gpu);
         let camera_transform = Mat4::from_translation(global_translation.extend(0.5))
-            * Mat4::from_scale(Vec3::splat(0.01));
+            * Mat4::from_scale(Vec3::splat(0.005));
 
         let xhat = Vec3::new(2.0, 1.0, 1.0);
         let yhat = Vec3::new(0.0, 3.0, -1.0); // TODO: could do 0,3,0 instead and handle the depth using the mesh.
         let zhat = Vec3::new(-2.0, 1.0, 1.0);
         let isometric_transform_cpu = Mat3::from_cols(xhat, yhat, zhat);
 
-        for atom in grid.iter() {
-            let isometric_pos = isometric_transform_cpu * atom.pos.as_vec3();
+        for pos in grid.positions() {
+            let atom = grid.at(pos);
+
+            if let Gas = *atom {
+                continue;
+            }
+
+            let isometric_pos = isometric_transform_cpu * pos.as_vec3(); // Maybe add 0.5?
             let model_transform = Mat4::from_translation(isometric_pos);
             gpu.render_mesh(
                 &mesh,
                 &(camera_transform * model_transform),
-                Some(atom.color()),
+                Some(atom_color(atom)),
             );
         }
     }

@@ -1,4 +1,3 @@
-// TODO: Remove.
 #![allow(unused)]
 #![allow(dead_code)]
 
@@ -22,7 +21,7 @@ use winit::{
 };
 
 const WINDOW_WIDTH: u32 = 1200;
-const WINDOW_HEIGHT: u32 = 675;
+const WINDOW_HEIGHT: u32 = 760;
 
 struct App<'a> {
     window: Option<Arc<Window>>,

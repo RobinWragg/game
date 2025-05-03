@@ -15,7 +15,6 @@ pub struct Game {
 impl Game {
     pub fn new() -> Game {
         let mut grid = Grid::new();
-        grid.hollow_out();
         Self {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
