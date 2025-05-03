@@ -1,6 +1,5 @@
 use crate::grid::*;
 use crate::prelude::*;
-use serde_json;
 
 pub struct Game {
     debugger: Debugger,
@@ -10,7 +9,6 @@ pub struct Game {
     grid_editor: Editor,
     grid_viewer: Viewer,
     events_for_next_frame: VecDeque<Event>,
-    dragging_pos: Option<Vec2>,
     previous_mouse_pos_for_deduplication: Vec2,
 }
 
@@ -26,7 +24,6 @@ impl Game {
             grid_editor: Editor::new(),
             grid_viewer: Viewer::new(),
             events_for_next_frame: VecDeque::new(),
-            dragging_pos: None,
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
         }
     }

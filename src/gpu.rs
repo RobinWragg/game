@@ -208,11 +208,6 @@ impl Uniform {
     }
 }
 
-struct Pipelines {
-    no_depth_test: wgpu::RenderPipeline,
-    depth_test: wgpu::RenderPipeline,
-}
-
 pub struct Gpu<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -248,7 +243,6 @@ impl<'a> Gpu<'a> {
     }
 
     pub fn window_to_normalized_transform(&self) -> Mat4 {
-        let width = self.width() as f32;
         let height = self.height() as f32;
         let pixels_to_normalized = Mat4::from_scale(Vec3::new(2.0 / height, -2.0 / height, 1.0));
         let translation = Mat4::from_translation(Vec3::new(-self.aspect_ratio(), 1.0, 0.0));
@@ -716,7 +710,7 @@ impl<'a> Gpu<'a> {
             &uniform.as_bytes(&(aspect_ratio_transform * *matrix), &color),
         );
 
-        let mut render_pass = self
+        let render_pass = self
             .frame_objects
             .as_mut()
             .unwrap()

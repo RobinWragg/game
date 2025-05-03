@@ -1,11 +1,65 @@
-use crate::math::{cube_triangles, ray_unitcube_intersection, transform_2d};
+use crate::math::{cube_triangles, ray_unitcube_intersection};
 use crate::prelude::*;
 use dot_vox;
-use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::{Read, Write};
 
 pub mod grid2d;
+
+fn transtellar_list() -> Vec<AtomWithPos> {
+    let vox = dot_vox::load("nopush/Transtellar/Transtellar.vox").unwrap();
+    assert!(vox.models.len() == 1);
+    let model = &vox.models[0];
+    dbg!(model.voxels.len());
+
+    let mut atoms: Vec<AtomWithPos> = model
+        .voxels
+        .iter()
+        .map(|voxel| {
+            AtomWithPos::with_color(
+                IVec3::new(voxel.x as i32, voxel.z as i32, voxel.y as i32),
+                Vec4::new(
+                    vox.palette[voxel.i as usize].r as f32 / 255.0,
+                    vox.palette[voxel.i as usize].g as f32 / 255.0,
+                    vox.palette[voxel.i as usize].b as f32 / 255.0,
+                    1.0,
+                ),
+            )
+        })
+        .collect();
+    // atoms = atoms.split_at(8 * 8 * 8).0.to_vec();
+
+    // Center the atoms around the origin
+    atoms = {
+        let mut minimum = IVec3::splat(i32::MAX);
+        let mut maximum = IVec3::splat(i32::MIN);
+        for atom in &atoms {
+            minimum = atom.pos.min(minimum);
+            maximum = atom.pos.max(maximum);
+        }
+        let center = (maximum + minimum) / 2;
+        for atom in &mut atoms {
+            atom.pos -= center;
+        }
+
+        // axes
+        for i in 1..32 {
+            atoms.push(AtomWithPos::with_color(
+                IVec3::new(i, 0, 0),
+                Vec4::new(1.0, 0.0, 0.0, 1.0),
+            ));
+            atoms.push(AtomWithPos::with_color(
+                IVec3::new(0, i, 0),
+                Vec4::new(0.0, 1.0, 0.0, 1.0),
+            ));
+            atoms.push(AtomWithPos::with_color(
+                IVec3::new(0, 0, i),
+                Vec4::new(0.0, 0.0, 1.0, 1.0),
+            ));
+        }
+        atoms
+    };
+
+    atoms
+}
 
 fn adjacent_atom(origin_atom: IVec3, nearby_pos: Vec3) -> IVec3 {
     let origin = origin_atom.as_vec3() + Vec3::splat(0.5);
@@ -50,7 +104,6 @@ fn closest_ray_grid_intersection<'a>(
         return None;
     }
 
-    let half = Vec3::splat(0.5);
     let sorter = |a: &(IVec3, Vec3), b: &(IVec3, Vec3)| {
         let a_dist = ray_origin.distance(a.1);
         let b_dist = ray_origin.distance(b.1);
@@ -62,7 +115,7 @@ fn closest_ray_grid_intersection<'a>(
 }
 
 #[derive(Clone)]
-enum AtomVariant {
+enum Atom {
     Solid(Vec4), // Color. TODO: f32 is gross overkill here.
     Liquid,
     LiquidSource(IVec3),
@@ -70,92 +123,40 @@ enum AtomVariant {
 }
 
 #[derive(Clone)]
-struct Atom {
+struct AtomWithPos {
     pub pos: IVec3, // TODO: i16 or even i8 might be ok here.
-    pub variant: AtomVariant,
+    pub variant: Atom,
 }
 
-impl Atom {
+impl AtomWithPos {
     fn with_color(pos: IVec3, color: Vec4) -> Self {
         Self {
             pos,
-            variant: AtomVariant::Solid(color),
+            variant: Atom::Solid(color),
         }
     }
 
     fn color(&self) -> Vec4 {
         match &self.variant {
-            AtomVariant::Solid(color) => *color,
-            AtomVariant::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
-            AtomVariant::LiquidSource(_) => Vec4::new(1.0, 1.0, 1.0, 1.0),
-            AtomVariant::Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
+            Atom::Solid(color) => *color,
+            Atom::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
+            Atom::LiquidSource(_) => Vec4::new(1.0, 1.0, 1.0, 1.0),
+            Atom::Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
         }
     }
 }
 
 pub struct Grid {
-    atoms: Vec<Atom>,
+    atoms: Vec<AtomWithPos>,
 }
 
 impl Grid {
     pub fn new() -> Self {
-        if true {
-            let vox = dot_vox::load("nopush/Transtellar/Transtellar.vox").unwrap();
-            assert!(vox.models.len() == 1);
-            let model = &vox.models[0];
-            dbg!(model.voxels.len());
-
-            let mut atoms: Vec<Atom> = model
-                .voxels
-                .iter()
-                .map(|voxel| {
-                    Atom::with_color(
-                        IVec3::new(voxel.x as i32, voxel.z as i32, voxel.y as i32),
-                        Vec4::new(
-                            vox.palette[voxel.i as usize].r as f32 / 255.0,
-                            vox.palette[voxel.i as usize].g as f32 / 255.0,
-                            vox.palette[voxel.i as usize].b as f32 / 255.0,
-                            1.0,
-                        ),
-                    )
-                })
-                .collect();
-            // atoms = atoms.split_at(8 * 8 * 8).0.to_vec();
-
-            // Center the atoms around the origin
-            atoms = {
-                let mut minimum = IVec3::splat(i32::MAX);
-                let mut maximum = IVec3::splat(i32::MIN);
-                for atom in &atoms {
-                    minimum = atom.pos.min(minimum);
-                    maximum = atom.pos.max(maximum);
-                }
-                let center = (maximum + minimum) / 2;
-                for atom in &mut atoms {
-                    atom.pos -= center;
-                }
-
-                // axes
-                for i in 1..32 {
-                    atoms.push(Atom::with_color(
-                        IVec3::new(i, 0, 0),
-                        Vec4::new(1.0, 0.0, 0.0, 1.0),
-                    ));
-                    atoms.push(Atom::with_color(
-                        IVec3::new(0, i, 0),
-                        Vec4::new(0.0, 1.0, 0.0, 1.0),
-                    ));
-                    atoms.push(Atom::with_color(
-                        IVec3::new(0, 0, i),
-                        Vec4::new(0.0, 0.0, 1.0, 1.0),
-                    ));
-                }
-                atoms
-            };
-
-            Self { atoms }
-        } else {
-            Self { atoms: vec![] }
+        Self {
+            atoms: vec![AtomWithPos {
+                pos: IVec3::splat(1),
+                variant: Atom::Solid(Vec4::splat(1.0)),
+            }],
         }
     }
 
@@ -164,27 +165,21 @@ impl Grid {
     }
 
     fn add(&mut self, pos: IVec3) {
-        debug_assert!(!self.contains(&pos), "Atom already exists at this position");
-        self.atoms.push(Atom::with_color(
+        debug_assert!(
+            !self.contains(&pos),
+            "AtomWithPos already exists at this position"
+        );
+        self.atoms.push(AtomWithPos::with_color(
             pos,
             Vec4::new(1.0, rand::random::<f32>(), rand::random::<f32>(), 1.0),
         ));
-    }
-
-    fn overwrite(&mut self, pos: IVec3) {
-        debug_assert!(self.contains(&pos), "Atom doesn't exist at this position");
-        self.atoms
-            .iter_mut()
-            .find(|atom| atom.pos == pos)
-            .unwrap()
-            .pos = pos;
     }
 
     fn contains(&self, pos: &IVec3) -> bool {
         self.atoms.iter().any(|atom| atom.pos == *pos)
     }
 
-    fn iter(&self) -> impl Iterator<Item = &Atom> {
+    fn iter(&self) -> impl Iterator<Item = &AtomWithPos> {
         self.atoms.iter()
     }
 

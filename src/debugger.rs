@@ -1,8 +1,8 @@
 use crate::grid::grid2d::{Atom2d, EditorState};
 use crate::math::transform_2d;
 use crate::prelude::*;
+use egui;
 use egui::epaint::{image::ImageData, textures::*};
-use egui::{self, Modifiers};
 
 // TODO: I'm not clipping the primitives as instructed.
 
@@ -10,7 +10,6 @@ use egui::{self, Modifiers};
 pub struct Debugger {
     ctx: egui::Context,
     egui_to_gpu_tex_id: HashMap<u64, usize>,
-    mesh: Option<Mesh>,
     delta_times: VecDeque<f32>,
     input: egui::RawInput,
     matrix: Mat4,
@@ -30,38 +29,6 @@ impl Debugger {
                 }
             })
             .unwrap()
-    }
-
-    pub fn render_test(&mut self, gpu: &mut Gpu) {
-        let mesh = match self.mesh.as_mut() {
-            Some(m) => m,
-            None => {
-                let positions = vec![
-                    Vec2::new(0.0, 0.0),
-                    Vec2::new(1.0, 0.0),
-                    Vec2::new(0.0, 1.0),
-                ];
-
-                let colors = vec![
-                    Vec4::new(0.0, 1.0, 0.0, 1.0),
-                    Vec4::new(1.0, 0.0, 0.0, 1.0),
-                    Vec4::new(0.0, 0.0, 1.0, 0.0),
-                ];
-                let mesh = Mesh::new_2d(&positions, Some(&colors), Some((0, &positions)), gpu);
-                self.mesh = Some(mesh);
-                self.mesh.as_mut().unwrap()
-            }
-        };
-
-        // TODO: don't use the egui texture for the render test. use an independent one. It's also pretty hacky to have a pub texture field.
-        match self.egui_to_gpu_tex_id.get(&0) {
-            Some(t) => {
-                mesh.texture = *t;
-            }
-            None => return,
-        };
-
-        gpu.render_mesh(&mesh, &Mat4::IDENTITY, None);
     }
 
     pub fn update(&mut self, events: &mut VecDeque<Event>, dt: f32, gpu: &Gpu) {
