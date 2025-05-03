@@ -145,7 +145,7 @@ fn plane_ray_intersection(
 pub fn ray_unitcube_intersection(
     ray_origin: Vec3,
     ray_dir: Vec3,
-    cube_corner: IVec3,
+    cube_corner: UVec3,
 ) -> Option<Vec3> {
     let inv_dir = ray_dir.recip();
     let cube_corner = cube_corner.as_vec3();

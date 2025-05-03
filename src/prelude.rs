@@ -3,6 +3,7 @@ pub use crate::gpu::{Gpu, Mesh};
 pub use glam::{
     f32::{Mat3, Mat4, Vec2, Vec3, Vec4},
     i32::IVec3,
+    usize::USizeVec3 as UVec3,
     Vec2Swizzles, Vec3Swizzles, Vec4Swizzles,
 };
 pub use rand::prelude::*;

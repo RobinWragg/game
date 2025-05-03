@@ -15,7 +15,7 @@ fn transtellar_list() -> Vec<AtomWithPos> {
         .iter()
         .map(|voxel| {
             AtomWithPos::with_color(
-                IVec3::new(voxel.x as i32, voxel.z as i32, voxel.y as i32),
+                UVec3::new(voxel.x.into(), voxel.z.into(), voxel.y.into()),
                 Vec4::new(
                     vox.palette[voxel.i as usize].r as f32 / 255.0,
                     vox.palette[voxel.i as usize].g as f32 / 255.0,
@@ -27,31 +27,19 @@ fn transtellar_list() -> Vec<AtomWithPos> {
         .collect();
     // atoms = atoms.split_at(8 * 8 * 8).0.to_vec();
 
-    // Center the atoms around the origin
     atoms = {
-        let mut minimum = IVec3::splat(i32::MAX);
-        let mut maximum = IVec3::splat(i32::MIN);
-        for atom in &atoms {
-            minimum = atom.pos.min(minimum);
-            maximum = atom.pos.max(maximum);
-        }
-        let center = (maximum + minimum) / 2;
-        for atom in &mut atoms {
-            atom.pos -= center;
-        }
-
         // axes
         for i in 1..32 {
             atoms.push(AtomWithPos::with_color(
-                IVec3::new(i, 0, 0),
+                UVec3::new(i, 0, 0),
                 Vec4::new(1.0, 0.0, 0.0, 1.0),
             ));
             atoms.push(AtomWithPos::with_color(
-                IVec3::new(0, i, 0),
+                UVec3::new(0, i, 0),
                 Vec4::new(0.0, 1.0, 0.0, 1.0),
             ));
             atoms.push(AtomWithPos::with_color(
-                IVec3::new(0, 0, i),
+                UVec3::new(0, 0, i),
                 Vec4::new(0.0, 0.0, 1.0, 1.0),
             ));
         }
@@ -61,7 +49,7 @@ fn transtellar_list() -> Vec<AtomWithPos> {
     atoms
 }
 
-fn adjacent_atom(origin_atom: IVec3, nearby_pos: Vec3) -> IVec3 {
+fn adjacent_atom(origin_atom: UVec3, nearby_pos: Vec3) -> UVec3 {
     let origin = origin_atom.as_vec3() + Vec3::splat(0.5);
     let mut candidates = [
         origin + Vec3::new(-1.0, 0.0, 0.0),
@@ -80,18 +68,14 @@ fn adjacent_atom(origin_atom: IVec3, nearby_pos: Vec3) -> IVec3 {
 
     candidates.sort_by(sorter);
     let closest = candidates[0];
-    IVec3::new(
-        closest.x.floor() as i32,
-        closest.y.floor() as i32,
-        closest.z.floor() as i32,
-    )
+    closest.as_usizevec3()
 }
 
 fn closest_ray_grid_intersection<'a>(
     ray_origin: Vec3,
     ray_dir: Vec3,
-    atoms: impl IntoIterator<Item = &'a IVec3>,
-) -> Option<(IVec3, Vec3)> {
+    atoms: impl IntoIterator<Item = &'a UVec3>,
+) -> Option<(UVec3, Vec3)> {
     let mut intersections = vec![];
 
     for atom in atoms {
@@ -104,7 +88,7 @@ fn closest_ray_grid_intersection<'a>(
         return None;
     }
 
-    let sorter = |a: &(IVec3, Vec3), b: &(IVec3, Vec3)| {
+    let sorter = |a: &(UVec3, Vec3), b: &(UVec3, Vec3)| {
         let a_dist = ray_origin.distance(a.1);
         let b_dist = ray_origin.distance(b.1);
         a_dist.partial_cmp(&b_dist).unwrap()
@@ -124,12 +108,12 @@ enum Atom {
 
 #[derive(Clone)]
 struct AtomWithPos {
-    pub pos: IVec3, // TODO: i16 or even i8 might be ok here.
+    pub pos: UVec3, // TODO: i16 or even i8 might be ok here.
     pub variant: Atom,
 }
 
 impl AtomWithPos {
-    fn with_color(pos: IVec3, color: Vec4) -> Self {
+    fn with_color(pos: UVec3, color: Vec4) -> Self {
         Self {
             pos,
             variant: Atom::Solid(color),
@@ -153,10 +137,28 @@ pub struct Grid {
 impl Grid {
     pub fn new() -> Self {
         Self {
-            atoms: vec![AtomWithPos {
-                pos: IVec3::splat(1),
-                variant: Atom::Solid(Vec4::splat(1.0)),
-            }],
+            atoms: vec![
+                AtomWithPos {
+                    pos: UVec3::splat(0),
+                    variant: Atom::Solid(Vec4::new(0.5, 0.5, 0.5, 1.0)),
+                },
+                AtomWithPos {
+                    pos: UVec3::splat(15),
+                    variant: Atom::Solid(Vec4::splat(1.0)),
+                },
+                AtomWithPos {
+                    pos: UVec3::new(15, 0, 0),
+                    variant: Atom::Solid(Vec4::new(1.0, 0.0, 0.0, 1.0)),
+                },
+                AtomWithPos {
+                    pos: UVec3::new(0, 15, 0),
+                    variant: Atom::Solid(Vec4::new(0.0, 1.0, 0.0, 1.0)),
+                },
+                AtomWithPos {
+                    pos: UVec3::new(0, 0, 15),
+                    variant: Atom::Solid(Vec4::new(0.0, 0.0, 1.0, 1.0)),
+                },
+            ],
         }
     }
 
@@ -164,7 +166,7 @@ impl Grid {
         self.atoms.is_empty()
     }
 
-    fn add(&mut self, pos: IVec3) {
+    fn add(&mut self, pos: UVec3) {
         debug_assert!(
             !self.contains(&pos),
             "AtomWithPos already exists at this position"
@@ -175,7 +177,7 @@ impl Grid {
         ));
     }
 
-    fn contains(&self, pos: &IVec3) -> bool {
+    fn contains(&self, pos: &UVec3) -> bool {
         self.atoms.iter().any(|atom| atom.pos == *pos)
     }
 
@@ -183,11 +185,11 @@ impl Grid {
         self.atoms.iter()
     }
 
-    fn positions(&self) -> impl Iterator<Item = &IVec3> {
+    fn positions(&self) -> impl Iterator<Item = &UVec3> {
         self.atoms.iter().map(|atom| &atom.pos)
     }
 
-    fn remove(&mut self, pos: IVec3) {
+    fn remove(&mut self, pos: UVec3) {
         // TODO: This will check all atoms even if the atom is found early.
         self.atoms.retain(|atom| atom.pos != pos);
     }
@@ -229,8 +231,8 @@ pub struct Editor {
     camera_transform: Mat4, // Sans aspect ratio correct for now
     rotation: Vec2,
     mouse_pos: Option<Vec2>,
-    highlighted_atom: Option<IVec3>,
-    proposed_atom: Option<IVec3>,
+    highlighted_atom: Option<UVec3>,
+    proposed_atom: Option<UVec3>,
 }
 
 impl Editor {
@@ -270,7 +272,7 @@ impl Editor {
         });
 
         if grid.is_empty() {
-            grid.add(IVec3::splat(0));
+            grid.add(UVec3::splat(0));
         }
 
         // Rotation TODO: test whether this is framerate dependent
@@ -288,7 +290,7 @@ impl Editor {
 
         self.camera_transform = {
             let depth_buffer_resolution = 0.01;
-            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.02, 0.02, depth_buffer_resolution));
+            let arbitrary_scale = Mat4::from_scale(Vec3::new(0.05, 0.05, depth_buffer_resolution));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
             let rotation =
@@ -415,7 +417,7 @@ impl Viewer {
 
         let mesh = Mesh::new(&verts, Some(&intensities), None, gpu);
         let camera_transform = Mat4::from_translation(global_translation.extend(0.5))
-            * Mat4::from_scale(Vec3::splat(0.005));
+            * Mat4::from_scale(Vec3::splat(0.01));
 
         let xhat = Vec3::new(2.0, 1.0, 1.0);
         let yhat = Vec3::new(0.0, 3.0, -1.0); // TODO: could do 0,3,0 instead and handle the depth using the mesh.
