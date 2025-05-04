@@ -120,13 +120,12 @@ impl Mesh {
     }
 
     fn create_vertex_buffer(num_bytes: usize, device: &wgpu::Device) -> wgpu::Buffer {
-        let desc = wgpu::BufferDescriptor {
+        device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             size: num_bytes as u64,
             mapped_at_creation: false,
-        };
-        device.create_buffer(&desc)
+        })
     }
 }
 
@@ -141,13 +140,12 @@ impl Uniform {
         debug_assert_eq!(size, 16 * 4 + 4 * 4);
 
         let buffer = {
-            let desc = wgpu::BufferDescriptor {
+            device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 size: size as u64,
                 mapped_at_creation: false,
-            };
-            device.create_buffer(&desc)
+            })
         };
 
         let bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -505,7 +503,7 @@ impl<'a> Gpu<'a> {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("default gb texture"),
+            label: None,
             view_formats: &[],
         });
         let filter = if linear_filtering {
