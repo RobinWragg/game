@@ -2,7 +2,7 @@ use crate::math::transform_2d;
 use crate::prelude::*;
 use bytemuck;
 use pollster;
-use std::mem::size_of;
+use std::mem::{size_of, swap, take};
 use std::sync::Arc;
 use wgpu;
 use winit::window::Window;
@@ -15,9 +15,9 @@ struct Texture {
     bindgroup: wgpu::BindGroup,
 }
 
-struct FrameObjects {
-    surface_texture: wgpu::SurfaceTexture,
-    command_encoder: wgpu::CommandEncoder,
+struct Frame {
+    surface_texture: Option<wgpu::SurfaceTexture>,
+    command_encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
 }
 
@@ -217,7 +217,7 @@ pub struct Gpu<'a> {
     uniform_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    frame_objects: Option<FrameObjects>,
+    frame: Frame,
     busy_uniforms: Vec<Uniform>,
     idle_uniforms: Vec<Uniform>,
     width: usize,
@@ -394,7 +394,11 @@ impl<'a> Gpu<'a> {
             uniform_layout,
             texture_layout,
             textures: vec![],
-            frame_objects: None,
+            frame: Frame {
+                surface_texture: None,
+                command_encoder: None,
+                render_pass: None,
+            },
             busy_uniforms: vec![],
             idle_uniforms: vec![],
             render_count: 0,
@@ -621,9 +625,7 @@ impl<'a> Gpu<'a> {
 
     pub fn set_render_features(&mut self, feature_flags: usize) {
         let pipeline = &self.pipelines[feature_flags];
-        self.frame_objects
-            .as_mut()
-            .unwrap()
+        self.frame
             .render_pass
             .as_mut()
             .unwrap()
@@ -668,25 +670,20 @@ impl<'a> Gpu<'a> {
         // todo is it necessary to set the pipeline here?
         render_pass.set_pipeline(&self.pipelines[0]);
 
-        self.frame_objects = Some(FrameObjects {
-            surface_texture,
-            command_encoder,
-            render_pass: Some(render_pass),
-        });
-
-        self.render_count = 0;
+        self.frame.surface_texture = Some(surface_texture);
+        self.frame.command_encoder = Some(command_encoder);
+        self.frame.render_pass = Some(render_pass);
     }
 
     pub fn finish_frame(&mut self) {
-        let mut frame_objects = std::mem::take(&mut self.frame_objects).unwrap();
-        frame_objects.render_pass = None; // Finish the render pass
+        self.frame.render_pass = None; // Finish the render pass
 
-        let finished_command_buffer = frame_objects.command_encoder.finish();
+        let finished_command_buffer = take(&mut self.frame.command_encoder).unwrap().finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
 
-        std::mem::swap(&mut self.idle_uniforms, &mut self.busy_uniforms);
+        swap(&mut self.idle_uniforms, &mut self.busy_uniforms);
 
-        frame_objects.surface_texture.present();
+        take(&mut self.frame.surface_texture).unwrap().present();
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
@@ -708,13 +705,7 @@ impl<'a> Gpu<'a> {
             &uniform.as_bytes(&(aspect_ratio_transform * *matrix), &color),
         );
 
-        let render_pass = self
-            .frame_objects
-            .as_mut()
-            .unwrap()
-            .render_pass
-            .as_mut()
-            .unwrap();
+        let render_pass = self.frame.render_pass.as_mut().unwrap();
 
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
