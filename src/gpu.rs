@@ -21,110 +21,6 @@ struct Frame {
     render_pass: Option<wgpu::RenderPass<'static>>,
 }
 
-impl Frame {
-    fn new() -> Self {
-        Self {
-            surface_texture: None,
-            command_encoder: None,
-            render_pass: None,
-        }
-    }
-}
-
-struct Swapchain {
-    frames: [Frame; 3],
-    current_frame: usize,
-}
-
-impl Swapchain {
-    fn new() -> Self {
-        Self {
-            frames: [Frame::new(), Frame::new(), Frame::new()],
-            current_frame: 0,
-        }
-    }
-
-    fn begin_frame(
-        &mut self,
-        surface: &wgpu::Surface,
-        device: &wgpu::Device,
-        depth_texture_view: &wgpu::TextureView,
-    ) {
-        let surface_texture = surface.get_current_texture().unwrap();
-
-        let mut command_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut render_pass = command_encoder
-            .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            })
-            .forget_lifetime();
-
-        self.current_frame = (self.current_frame + 1) % 3;
-        self.frames[self.current_frame].surface_texture = Some(surface_texture);
-        self.frames[self.current_frame].command_encoder = Some(command_encoder);
-        self.frames[self.current_frame].render_pass = Some(render_pass);
-    }
-
-    fn set_pipeline(&mut self, pipeline: &wgpu::RenderPipeline) {
-        self.frames[self.current_frame]
-            .render_pass
-            .as_mut()
-            .unwrap()
-            .set_pipeline(&pipeline);
-    }
-
-    fn current_render_pass(&mut self) -> &mut wgpu::RenderPass<'static> {
-        self.frames[self.current_frame]
-            .render_pass
-            .as_mut()
-            .unwrap()
-    }
-
-    fn finish_frame(
-        &mut self,
-        queue: &wgpu::Queue,
-        idle_uniforms: &mut Vec<Uniform>,
-        busy_uniforms: &mut Vec<Uniform>,
-    ) {
-        self.frames[self.current_frame].render_pass = None; // Finish the render pass
-
-        let finished_command_buffer = take(&mut self.frames[self.current_frame].command_encoder)
-            .unwrap()
-            .finish();
-        queue.submit(std::iter::once(finished_command_buffer));
-
-        swap(idle_uniforms, busy_uniforms);
-
-        take(&mut self.frames[self.current_frame].surface_texture)
-            .unwrap()
-            .present();
-    }
-}
-
 pub struct Mesh {
     vert_count: usize,
     positions: wgpu::Buffer,
@@ -321,11 +217,12 @@ pub struct Gpu<'a> {
     uniform_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    swapchain: Swapchain,
+    frame: Frame,
     busy_uniforms: Vec<Uniform>,
     idle_uniforms: Vec<Uniform>,
     width: usize,
     height: usize,
+    render_count: u32,
 }
 
 impl<'a> Gpu<'a> {
@@ -497,9 +394,14 @@ impl<'a> Gpu<'a> {
             uniform_layout,
             texture_layout,
             textures: vec![],
-            swapchain: Swapchain::new(),
+            frame: Frame {
+                surface_texture: None,
+                command_encoder: None,
+                render_pass: None,
+            },
             busy_uniforms: vec![],
             idle_uniforms: vec![],
+            render_count: 0,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -722,20 +624,66 @@ impl<'a> Gpu<'a> {
     }
 
     pub fn set_render_features(&mut self, feature_flags: usize) {
-        self.swapchain.set_pipeline(&self.pipelines[feature_flags]);
+        let pipeline = &self.pipelines[feature_flags];
+        self.frame
+            .render_pass
+            .as_mut()
+            .unwrap()
+            .set_pipeline(&pipeline);
     }
 
     pub fn begin_frame(&mut self) {
-        self.swapchain
-            .begin_frame(&self.surface, &self.device, &self.depth_texture_view);
+        let surface_texture = self.surface.get_current_texture().unwrap();
+
+        let mut command_encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        let view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut render_pass = command_encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            })
+            .forget_lifetime();
+
+        // todo is it necessary to set the pipeline here?
+        render_pass.set_pipeline(&self.pipelines[0]);
+
+        self.frame.surface_texture = Some(surface_texture);
+        self.frame.command_encoder = Some(command_encoder);
+        self.frame.render_pass = Some(render_pass);
     }
 
     pub fn finish_frame(&mut self) {
-        self.swapchain.finish_frame(
-            &self.queue,
-            &mut self.idle_uniforms,
-            &mut self.busy_uniforms,
-        );
+        self.frame.render_pass = None; // Finish the render pass
+
+        let finished_command_buffer = take(&mut self.frame.command_encoder).unwrap().finish();
+        self.queue.submit(std::iter::once(finished_command_buffer));
+
+        swap(&mut self.idle_uniforms, &mut self.busy_uniforms);
+
+        take(&mut self.frame.surface_texture).unwrap().present();
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
@@ -757,7 +705,8 @@ impl<'a> Gpu<'a> {
             &uniform.as_bytes(&(aspect_ratio_transform * *matrix), &color),
         );
 
-        let render_pass = self.swapchain.current_render_pass();
+        let render_pass = self.frame.render_pass.as_mut().unwrap();
+
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
         render_pass.set_vertex_buffer(2, mesh.vert_colors.slice(..));
@@ -770,5 +719,6 @@ impl<'a> Gpu<'a> {
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
         self.busy_uniforms.push(uniform);
+        self.render_count += 1;
     }
 }
