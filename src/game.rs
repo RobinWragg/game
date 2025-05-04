@@ -14,7 +14,7 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Game {
-        let mut grid = Grid::new();
+        let mut grid = Grid::from_file();
         Self {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
@@ -72,6 +72,6 @@ impl Game {
 
 impl Drop for Game {
     fn drop(&mut self) {
-        // TODO: save grid
+        self.grid.save();
     }
 }

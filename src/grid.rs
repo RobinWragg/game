@@ -1,10 +1,14 @@
 use crate::math::{cube_triangles, ray_unitcube_intersection};
 use crate::prelude::*;
 use dot_vox;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{Read, Write};
 
 pub mod grid2d;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+
 enum Atom {
     Solid(Vec4), // Color. TODO: f32 is gross overkill here.
     Liquid,
@@ -170,13 +174,49 @@ impl Grid {
     const SIZE: usize = 16;
 
     pub fn new() -> Self {
-        let mut atoms = vec![vec![vec![Gas; Self::SIZE]; Self::SIZE]; Self::SIZE];
-        atoms[0][0][0] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
-        atoms[Self::SIZE - 1][0][0] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
-        atoms[0][Self::SIZE - 1][0] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
-        atoms[0][0][Self::SIZE - 1] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
-        atoms[Self::SIZE - 1][Self::SIZE - 1][Self::SIZE - 1] = Solid(Vec4::splat(1.0));
-        Self { atoms }
+        Self { atoms: vec![] }
+    }
+
+    pub fn from_file() -> Self {
+        let mut s = Self::new();
+        s.load();
+        s
+    }
+
+    pub fn load(&mut self) {
+        fn load_inner() -> Result<Vec<Vec<Vec<Atom>>>, std::io::Error> {
+            let mut file = File::open("nopush/grid_save.json")?;
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)?;
+            Ok(serde_json::from_str(&contents)?)
+        }
+
+        self.atoms = match load_inner() {
+            Ok(atoms) => {
+                println!("Loading atoms from file");
+                atoms
+            }
+            Err(_) => {
+                println!("Creating new atoms");
+                let mut atoms = vec![vec![vec![Gas; Self::SIZE]; Self::SIZE]; Self::SIZE];
+                atoms[0][0][0] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
+                atoms[Self::SIZE - 1][0][0] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
+                atoms[0][Self::SIZE - 1][0] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
+                atoms[0][0][Self::SIZE - 1] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
+                atoms[Self::SIZE - 1][Self::SIZE - 1][Self::SIZE - 1] = Solid(Vec4::splat(1.0));
+                atoms
+            }
+        };
+    }
+
+    pub fn save(&self) {
+        let json = serde_json::to_string(&self.atoms).expect("Failed to serialize grid");
+
+        let mut file = File::create("nopush/grid_save.json").expect("Failed to create file");
+        file.write_all(json.as_bytes())
+            .expect("Failed to write to file");
+
+        println!("Grid saved to nopush/grid_save.json");
     }
 
     fn at(&self, pos: UVec3) -> &Atom {
