@@ -160,17 +160,13 @@ impl Uniform {
         Self { buffer, bindgroup }
     }
 
-    fn as_bytes(&self, matrix: &Mat4, color: &Vec4) -> Vec<u8> {
-        let matrix_floats = matrix.to_cols_array();
-        let matrix_bytes = bytemuck::bytes_of(&matrix_floats);
-
-        let color_floats = color.to_array();
-        let color_bytes = bytemuck::bytes_of(&color_floats);
-
-        let mut uniform_bytes = Vec::with_capacity(matrix_bytes.len() + color_bytes.len());
-        uniform_bytes.extend_from_slice(matrix_bytes);
-        uniform_bytes.extend_from_slice(color_bytes);
-        uniform_bytes
+    fn as_bytes(matrix: &Mat4, color: &Vec4) -> Vec<u8> {
+        let m = bytemuck::bytes_of(matrix);
+        let c = bytemuck::bytes_of(color);
+        let mut combined = Vec::with_capacity(m.len() + c.len());
+        combined.extend_from_slice(m);
+        combined.extend_from_slice(c);
+        combined
     }
 }
 
@@ -188,7 +184,6 @@ pub struct Gpu<'a> {
     idle_uniforms: Vec<Uniform>,
     width: usize,
     height: usize,
-    render_count: u32,
 }
 
 impl<'a> Gpu<'a> {
@@ -367,7 +362,6 @@ impl<'a> Gpu<'a> {
             },
             busy_uniforms: vec![],
             idle_uniforms: vec![],
-            render_count: 0,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -668,7 +662,7 @@ impl<'a> Gpu<'a> {
         self.queue.write_buffer(
             &uniform.buffer,
             0,
-            &uniform.as_bytes(&(aspect_ratio_transform * *matrix), &color),
+            &Uniform::as_bytes(&(aspect_ratio_transform * *matrix), &color),
         );
 
         let render_pass = self.frame.render_pass.as_mut().unwrap();
@@ -685,6 +679,5 @@ impl<'a> Gpu<'a> {
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
         self.busy_uniforms.push(uniform);
-        self.render_count += 1;
     }
 }
