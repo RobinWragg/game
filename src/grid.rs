@@ -381,7 +381,7 @@ impl Editor {
             let total_transform = self.camera_transform * model_transform;
 
             let color = if self.highlighted_atom == Some(pos) {
-                Some(Vec4::new(0.0, 1.0, 0.0, 1.0))
+                Some(Vec4::new(1.0, 0.5, 0.5, 1.0))
             } else {
                 Some(atom_color(atom))
             };
@@ -392,7 +392,7 @@ impl Editor {
         if let Some(proposed_atom) = self.proposed_atom {
             let model_transform = Mat4::from_translation(proposed_atom.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
-            gpu.render_mesh(&mesh, &total_transform, Some(Vec4::new(0.0, 1.0, 1.0, 1.0)));
+            gpu.render_mesh(&mesh, &total_transform, Some(Vec4::new(0.5, 1.0, 0.5, 1.0)));
         }
     }
 }
