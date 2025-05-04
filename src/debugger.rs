@@ -1,4 +1,5 @@
 use crate::grid::grid2d::{Atom2d, EditorState};
+use crate::grid::Atom;
 use crate::math::transform_2d;
 use crate::prelude::*;
 use egui;
@@ -83,6 +84,8 @@ impl Debugger {
         };
 
         self.full_output = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
+            let mut global = GLOBAL.lock().unwrap();
+
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     // TODO: Update the displayed time every second instead of every 60 frames.
@@ -98,22 +101,12 @@ impl Debugger {
             });
             egui::Window::new("Editor").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-                    let radio_atom = self.editor_state.current_atom;
                     ui.radio_value(
-                        &mut self.editor_state.current_atom,
-                        if let Atom2d::Gas(p) = radio_atom {
-                            Atom2d::Gas(p)
-                        } else {
-                            Atom2d::Gas(0.0)
-                        },
-                        "Gas",
+                        &mut global.selected_atom_type,
+                        Atom::Solid(Vec4::ZERO),
+                        "Solid",
                     );
-                    ui.radio_value(&mut self.editor_state.current_atom, Atom2d::Solid, "Solid");
-                    ui.radio_value(
-                        &mut self.editor_state.current_atom,
-                        Atom2d::Liquid,
-                        "Liquid",
-                    );
+                    ui.radio_value(&mut global.selected_atom_type, Atom::Gas(0.0), "Gas");
                 });
                 if let Atom2d::Gas(pressure) = &mut self.editor_state.current_atom {
                     ui.add(egui::Slider::new(pressure, -100.0..=100.0).text("Pressure"));

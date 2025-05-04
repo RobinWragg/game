@@ -7,13 +7,10 @@ use std::io::{Read, Write};
 
 pub mod grid2d;
 
-#[derive(Clone, Serialize, Deserialize)]
-
-enum Atom {
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+pub enum Atom {
     Solid(Vec4), // Color. TODO: f32 is gross overkill here.
-    Liquid,
-    LiquidSource(IVec3),
-    Gas,
+    Gas(f32),
 }
 
 use Atom::*;
@@ -145,9 +142,7 @@ fn closest_ray_grid_intersection<'a>(
 fn atom_color(atom: &Atom) -> Vec4 {
     match atom {
         Solid(color) => *color,
-        Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
-        LiquidSource(_) => Vec4::new(1.0, 1.0, 1.0, 1.0),
-        Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
+        Gas(_) => Vec4::new(1.0, 0.0, 1.0, 1.0),
     }
 }
 
@@ -171,7 +166,7 @@ pub struct Grid {
 }
 
 impl Grid {
-    const SIZE: usize = 16;
+    const SIZE: usize = 8;
 
     pub fn new() -> Self {
         Self { atoms: vec![] }
@@ -198,7 +193,7 @@ impl Grid {
             }
             Err(_) => {
                 println!("Creating new atoms");
-                let mut atoms = vec![vec![vec![Gas; Self::SIZE]; Self::SIZE]; Self::SIZE];
+                let mut atoms = vec![vec![vec![Gas(0.0); Self::SIZE]; Self::SIZE]; Self::SIZE];
                 atoms[0][0][0] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
                 atoms[Self::SIZE - 1][0][0] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
                 atoms[0][Self::SIZE - 1][0] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
@@ -239,6 +234,18 @@ impl Grid {
                 .flat_map(move |y| (0..z_size).into_iter().map(move |z| UVec3::new(x, y, z)))
         })
     }
+
+    fn step(&mut self) {
+        let gases = self.positions().filter(|pos| match self.at(*pos) {
+            Gas(_) => true,
+            _ => false,
+        });
+        for pos in self.positions() {
+            if let Gas(pressure) = self.at_mut(pos) {
+                *pressure *= 0.995;
+            }
+        }
+    }
 }
 
 pub struct Editor {
@@ -253,7 +260,7 @@ impl Editor {
     pub fn new() -> Self {
         Self {
             camera_transform: Mat4::IDENTITY,
-            rotation: Vec2::ZERO,
+            rotation: Vec2::splat(PI / -8.0),
             mouse_pos: None,
             highlighted_atom: None,
             proposed_atom: None,
@@ -261,6 +268,8 @@ impl Editor {
     }
 
     pub fn update(&mut self, grid: &mut Grid, events: &mut VecDeque<Event>) {
+        let global = GLOBAL.lock().unwrap();
+
         let mut should_add_atom = false;
         let mut should_remove_atom = false;
         let mut scroll_delta = Vec2::ZERO;
@@ -285,7 +294,9 @@ impl Editor {
             _ => true,
         });
 
-        // Rotation TODO: test whether this is framerate dependent
+        grid.step();
+
+        // Camera rotation TODO: test whether this is framerate dependent
         {
             self.rotation += scroll_delta * -0.002;
             if self.rotation.x > TAU {
@@ -324,13 +335,13 @@ impl Editor {
                 .xyz()
                 .normalize();
 
-            let solid_positions = grid.positions().filter(|pos| match grid.at(*pos) {
-                Solid(_) => true,
-                _ => false,
+            let selectable_positions = grid.positions().filter(|pos| match grid.at(*pos) {
+                Gas(p) => *p > 0.1,
+                _ => true,
             });
 
             if let Some((atom, intersection_location)) =
-                closest_ray_grid_intersection(ray_origin, ray_direction, solid_positions)
+                closest_ray_grid_intersection(ray_origin, ray_direction, selectable_positions)
             {
                 Some((atom, intersection_location))
             } else {
@@ -352,12 +363,16 @@ impl Editor {
         }
 
         if should_add_atom {
-            if let Some(proposed_atom) = self.proposed_atom {
-                *grid.at_mut(proposed_atom) = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
+            if let Some(position) = self.proposed_atom {
+                let new_atom = match global.selected_atom_type {
+                    Solid(_) => Solid(Vec4::new(0.5, 0.5, 0.5, 1.0)),
+                    Gas(_) => Gas(1.0),
+                };
+                *grid.at_mut(position) = new_atom;
             }
         } else if should_remove_atom {
             if let Some(highlighted_atom) = self.highlighted_atom {
-                *grid.at_mut(highlighted_atom) = Gas;
+                *grid.at_mut(highlighted_atom) = Gas(0.0);
             }
         }
     }
@@ -368,15 +383,24 @@ impl Editor {
         let mesh = Mesh::new(&cube_triangles(), None, None, gpu);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
-        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.8)) * half_trans.inverse();
+        let half_trans_inv = half_trans.inverse();
 
         for pos in grid.positions() {
             let atom = grid.at(pos);
 
-            if let Gas = *atom {
-                continue;
+            if let Gas(p) = *atom {
+                if p < 0.1 {
+                    continue;
+                }
             }
 
+            let atom_size = if let Gas(pressure) = *atom {
+                pressure
+            } else {
+                0.8
+            };
+
+            let shrink = half_trans * Mat4::from_scale(Vec3::splat(atom_size)) * half_trans_inv;
             let model_transform = Mat4::from_translation(pos.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
 
@@ -390,6 +414,7 @@ impl Editor {
         }
 
         if let Some(proposed_atom) = self.proposed_atom {
+            let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.5)) * half_trans_inv;
             let model_transform = Mat4::from_translation(proposed_atom.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
             gpu.render_mesh(&mesh, &total_transform, Some(Vec4::new(0.5, 1.0, 0.5, 1.0)));
@@ -454,7 +479,7 @@ impl Viewer {
         for pos in grid.positions() {
             let atom = grid.at(pos);
 
-            if let Gas = *atom {
+            if let Gas(p) = *atom {
                 continue;
             }
 
