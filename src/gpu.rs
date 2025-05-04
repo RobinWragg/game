@@ -80,7 +80,8 @@ impl Mesh {
         gpu: &Gpu,
     ) {
         debug_assert_eq!(positions.len(), self.vert_count);
-        Self::write_vec3_slice_to_buffer(&self.positions, positions, &gpu.queue);
+        gpu.queue
+            .write_buffer(&self.positions, 0, bytemuck::cast_slice(positions));
 
         // Default normals for each triangle
         let mut normals = vec![Vec3::ZERO; self.vert_count];
@@ -94,25 +95,25 @@ impl Mesh {
             normals[i + 1] = normal;
             normals[i + 2] = normal;
         }
-        Self::write_vec3_slice_to_buffer(&self.normals, &normals, &gpu.queue);
+        gpu.queue
+            .write_buffer(&self.normals, 0, bytemuck::cast_slice(&normals));
 
         if let Some(colors) = vert_colors {
             debug_assert_eq!(colors.len(), self.vert_count);
-            Self::write_vec4_slice_to_buffer(&self.vert_colors, colors, &gpu.queue);
+            gpu.queue
+                .write_buffer(&self.vert_colors, 0, bytemuck::cast_slice(colors));
         } else {
             // Disable vertex colors by just multiplying the texture with white in the shader.
-            let white = Vec4::new(1.0, 1.0, 1.0, 1.0);
-            Self::write_vec4_slice_to_buffer(
-                &self.vert_colors,
-                &vec![white; positions.len()],
-                &gpu.queue,
-            );
+            let whites = vec![Vec4::splat(1.0); positions.len()];
+            gpu.queue
+                .write_buffer(&self.vert_colors, 0, bytemuck::cast_slice(&whites));
         }
 
         if let Some((id, uvs)) = texture_id_and_uvs {
             self.texture = id;
             debug_assert_eq!(uvs.len(), self.vert_count);
-            Self::write_vec2_slice_to_buffer(&self.uvs, uvs, &gpu.queue);
+            gpu.queue
+                .write_buffer(&self.uvs, 0, bytemuck::cast_slice(uvs));
         } else {
             self.texture = WHITE_TEXTURE_ID;
         }
@@ -126,39 +127,6 @@ impl Mesh {
             mapped_at_creation: false,
         };
         device.create_buffer(&desc)
-    }
-
-    fn write_vec2_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec2], queue: &wgpu::Queue) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 2); // Assume Vec2 or bigger.
-        for i in 0..slice.len() {
-            let a = slice[i].to_array();
-            floats.extend_from_slice(&a);
-        }
-        debug_assert!(floats.len() == slice.len() * 2);
-        let bytes = bytemuck::cast_slice(&floats);
-        queue.write_buffer(buffer, 0, bytes);
-    }
-
-    fn write_vec3_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec3], queue: &wgpu::Queue) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 3);
-        for i in 0..slice.len() {
-            let a = slice[i].to_array();
-            floats.extend_from_slice(&a);
-        }
-        debug_assert!(floats.len() == slice.len() * 3);
-        let bytes = bytemuck::cast_slice(&floats);
-        queue.write_buffer(buffer, 0, bytes);
-    }
-
-    fn write_vec4_slice_to_buffer(buffer: &wgpu::Buffer, slice: &[Vec4], queue: &wgpu::Queue) {
-        let mut floats: Vec<f32> = Vec::with_capacity(slice.len() * 4);
-        for i in 0..slice.len() {
-            let a = slice[i].to_array();
-            floats.extend_from_slice(&a);
-        }
-        debug_assert!(floats.len() == slice.len() * 4);
-        let bytes = bytemuck::cast_slice(&floats);
-        queue.write_buffer(buffer, 0, bytes);
     }
 }
 
