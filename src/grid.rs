@@ -7,10 +7,17 @@ use std::io::{Read, Write};
 
 pub mod grid2d;
 
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Atom {
     Solid(Vec4), // Color. TODO: f32 is gross overkill here.
-    Gas(f32),
+    Gas((f32, Vec3)),
+    GasSource(Vec3),
+}
+
+fn sum_gas(a: &(f32, Vec3), b: &(f32, Vec3)) -> Atom {
+    let total_p = a.0 + b.0;
+    let total_v = a.1 * a.0 + b.1 * b.0;
+    Gas((total_p, total_v))
 }
 
 use Atom::*;
@@ -143,6 +150,7 @@ fn atom_color(atom: &Atom) -> Vec4 {
     match atom {
         Solid(color) => *color,
         Gas(_) => Vec4::new(1.0, 0.0, 1.0, 1.0),
+        GasSource(_) => Vec4::splat(1.0),
     }
 }
 
@@ -163,13 +171,17 @@ impl AtomWithPos {
 
 pub struct Grid {
     atoms: Vec<Vec<Vec<Atom>>>,
+    flipper: bool,
 }
 
 impl Grid {
-    const SIZE: usize = 8;
+    const SIZE: usize = 16;
 
     pub fn new() -> Self {
-        Self { atoms: vec![] }
+        Self {
+            atoms: vec![],
+            flipper: false,
+        }
     }
 
     pub fn from_file() -> Self {
@@ -193,12 +205,13 @@ impl Grid {
             }
             Err(_) => {
                 println!("Creating new atoms");
-                let mut atoms = vec![vec![vec![Gas(0.0); Self::SIZE]; Self::SIZE]; Self::SIZE];
-                atoms[0][0][0] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
-                atoms[Self::SIZE - 1][0][0] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
-                atoms[0][Self::SIZE - 1][0] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
-                atoms[0][0][Self::SIZE - 1] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
-                atoms[Self::SIZE - 1][Self::SIZE - 1][Self::SIZE - 1] = Solid(Vec4::splat(1.0));
+                let mut atoms =
+                    vec![vec![vec![Gas((0.0, Vec3::ZERO)); Self::SIZE]; Self::SIZE]; Self::SIZE];
+                atoms[1][1][1] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
+                atoms[Self::SIZE - 2][1][1] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
+                atoms[1][Self::SIZE - 2][1] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
+                atoms[1][1][Self::SIZE - 2] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
+                atoms[Self::SIZE - 2][Self::SIZE - 2][Self::SIZE - 2] = Solid(Vec4::splat(1.0));
                 atoms
             }
         };
@@ -235,16 +248,123 @@ impl Grid {
         })
     }
 
-    fn step(&mut self) {
-        let gases = self.positions().filter(|pos| match self.at(*pos) {
-            Gas(_) => true,
-            _ => false,
-        });
-        for pos in self.positions() {
-            if let Gas(pressure) = self.at_mut(pos) {
-                *pressure *= 0.995;
+    fn mut_gas_pressures_3d(&mut self, pos: UVec3) -> Vec<&mut f32> {
+        let mut pressures = Vec::with_capacity(8); // Preallocate for 2x2x2 section
+
+        let atoms_ptr = self.atoms.as_mut_ptr(); // Get a raw pointer to the outer grid
+
+        unsafe {
+            for dx in 0..2 {
+                for dy in 0..2 {
+                    for dz in 0..2 {
+                        // Calculate the raw pointer to the current voxel
+                        let slice_ptr = atoms_ptr.add(pos.x + dx);
+                        let column_ptr = (*slice_ptr).as_mut_ptr().add(pos.y + dy);
+                        let atom_ptr = (*column_ptr).as_mut_ptr().add(pos.z + dz);
+
+                        // Dereference the pointer and check if it's a Gas atom
+                        if let Atom::Gas((pressure, _)) = &mut *atom_ptr {
+                            pressures.push(pressure);
+                        }
+                    }
+                }
             }
         }
+
+        pressures
+    }
+
+    fn spread_gas(&mut self) {
+        let f = self.flipper;
+
+        let mut reach_local_equilibrium = |pos: UVec3| {
+            let pressures = self.mut_gas_pressures_3d(pos);
+
+            let mut pressure_total = 0.0;
+            for pressure in &pressures {
+                pressure_total += **pressure;
+            }
+
+            let divided_total = pressure_total / pressures.len() as f32;
+
+            for pressure in pressures {
+                *pressure = divided_total;
+            }
+        };
+
+        if f {
+            for x in (0..Self::SIZE).step_by(2) {
+                for y in (0..Self::SIZE).step_by(2) {
+                    for z in (0..Self::SIZE).step_by(2) {
+                        reach_local_equilibrium(UVec3::new(x, y, z));
+                    }
+                }
+            }
+        } else {
+            for x in (1..Self::SIZE - 1).step_by(2) {
+                for y in (1..Self::SIZE - 1).step_by(2) {
+                    for z in (1..Self::SIZE - 1).step_by(2) {
+                        reach_local_equilibrium(UVec3::new(x, y, z));
+                    }
+                }
+            }
+        }
+    }
+
+    fn apply_edge_vacuum(&mut self) {
+        // TODO: This isn't writing over the edge planes, only the corners.
+        let s = Self::SIZE - 1;
+        for i in 0..Self::SIZE {
+            self.atoms[i][0][0] = Gas((0.0, Vec3::ZERO));
+            self.atoms[0][i][0] = Gas((0.0, Vec3::ZERO));
+            self.atoms[0][0][i] = Gas((0.0, Vec3::ZERO));
+            self.atoms[i][s][s] = Gas((0.0, Vec3::ZERO));
+            self.atoms[s][i][s] = Gas((0.0, Vec3::ZERO));
+            self.atoms[s][s][i] = Gas((0.0, Vec3::ZERO));
+        }
+    }
+
+    fn step_gas_source(&mut self) {
+        const SOURCE_PRESSURE: f32 = 1.0;
+
+        let sources: Vec<(UVec3, Vec3)> = self
+            .positions()
+            .filter_map(|pos| {
+                if let GasSource(v) = self.at(pos) {
+                    Some((pos, *v))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for source in sources {
+            let pos = source.0;
+            let source_v = source.1;
+            let adjacent =
+                adjacent_atom(pos, pos.as_vec3() + Vec3::splat(0.5) + source_v.normalize());
+
+            if let Gas(old) = self.atoms[adjacent.x][adjacent.y][adjacent.z] {
+                let new_atom = sum_gas(&old, &(SOURCE_PRESSURE, source_v));
+                self.atoms[adjacent.x][adjacent.y][adjacent.z] = new_atom;
+            }
+        }
+    }
+
+    fn simulate_gas_velocity(&mut self) {
+        // TODO
+        /*
+        If the velocity is enough to reach the next atom, then zero out the current atom and record that its p and v should be added to that next atom.
+        If the next atom isn't gas, remove that part of the velocity.
+         */
+    }
+
+    fn step(&mut self) {
+        self.spread_gas();
+        self.step_gas_source();
+        self.apply_edge_vacuum();
+
+        self.flipper = !self.flipper;
     }
 }
 
@@ -294,7 +414,9 @@ impl Editor {
             _ => true,
         });
 
-        grid.step();
+        if global.should_step {
+            grid.step();
+        }
 
         // Camera rotation TODO: test whether this is framerate dependent
         {
@@ -336,7 +458,7 @@ impl Editor {
                 .normalize();
 
             let selectable_positions = grid.positions().filter(|pos| match grid.at(*pos) {
-                Gas(p) => *p > 0.1,
+                Gas((p, _)) => *p > 0.1,
                 _ => true,
             });
 
@@ -366,13 +488,14 @@ impl Editor {
             if let Some(position) = self.proposed_atom {
                 let new_atom = match global.selected_atom_type {
                     Solid(_) => Solid(Vec4::new(0.5, 0.5, 0.5, 1.0)),
-                    Gas(_) => Gas(1.0),
+                    Gas(_) => Gas((1.0, Vec3::ZERO)),
+                    GasSource(_) => GasSource(Vec3::new(1.0, 0.0, 0.0)),
                 };
                 *grid.at_mut(position) = new_atom;
             }
         } else if should_remove_atom {
             if let Some(highlighted_atom) = self.highlighted_atom {
-                *grid.at_mut(highlighted_atom) = Gas(0.0);
+                *grid.at_mut(highlighted_atom) = Gas((0.0, Vec3::ZERO));
             }
         }
     }
@@ -388,13 +511,13 @@ impl Editor {
         for pos in grid.positions() {
             let atom = grid.at(pos);
 
-            if let Gas(p) = *atom {
-                if p < 0.1 {
+            if let Gas((p, _)) = *atom {
+                if p < 0.05 {
                     continue;
                 }
             }
 
-            let atom_size = if let Gas(pressure) = *atom {
+            let atom_size = if let Gas((pressure, _)) = *atom {
                 pressure
             } else {
                 0.8

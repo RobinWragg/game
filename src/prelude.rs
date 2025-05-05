@@ -18,11 +18,13 @@ pub use std::time::Instant;
 
 pub struct Global {
     pub selected_atom_type: Atom,
+    pub should_step: bool,
 }
 
 pub static GLOBAL: Lazy<Mutex<Global>> = Lazy::new(|| {
     Mutex::new(Global {
         selected_atom_type: Atom::Solid(Vec4::ZERO),
+        should_step: false,
     })
 });
 

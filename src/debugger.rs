@@ -106,7 +106,16 @@ impl Debugger {
                         Atom::Solid(Vec4::ZERO),
                         "Solid",
                     );
-                    ui.radio_value(&mut global.selected_atom_type, Atom::Gas(0.0), "Gas");
+                    ui.radio_value(
+                        &mut global.selected_atom_type,
+                        Atom::Gas((0.0, Vec3::ZERO)),
+                        "Gas",
+                    );
+                    ui.radio_value(
+                        &mut global.selected_atom_type,
+                        Atom::GasSource(Vec3::ZERO),
+                        "GasSource",
+                    );
                 });
                 if let Atom2d::Gas(pressure) = &mut self.editor_state.current_atom {
                     ui.add(egui::Slider::new(pressure, -100.0..=100.0).text("Pressure"));
@@ -125,7 +134,7 @@ impl Debugger {
                     self.editor_state.is_playing = !self.editor_state.is_playing;
                 }
 
-                self.editor_state.should_step = ui.button("Step").clicked();
+                global.should_step = ui.button("Step").clicked();
             });
         });
     }
