@@ -16,13 +16,6 @@ struct Texture {
     bindgroup: wgpu::BindGroup,
 }
 
-struct Frame {
-    uniform_queue_index: usize,
-    surface_texture: Option<wgpu::SurfaceTexture>,
-    command_encoder: Option<wgpu::CommandEncoder>,
-    render_pass: Option<wgpu::RenderPass<'static>>,
-}
-
 pub struct Mesh {
     vert_count: usize,
     positions: wgpu::Buffer,
@@ -172,8 +165,8 @@ impl Uniform {
     }
 }
 
-pub struct Gpu<'a> {
-    surface: wgpu::Surface<'a>,
+pub struct Gpu {
+    surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipelines: [wgpu::RenderPipeline; 4],
@@ -181,13 +174,16 @@ pub struct Gpu<'a> {
     uniform_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    frame: Frame,
+    uniform_queue_index: usize,
+    surface_texture: Option<wgpu::SurfaceTexture>,
+    command_encoder: Option<wgpu::CommandEncoder>,
+    render_pass: Option<wgpu::RenderPass<'static>>,
     uniform_queue: Vec<Vec<Uniform>>,
     width: usize,
     height: usize,
 }
 
-impl<'a> Gpu<'a> {
+impl Gpu {
     // These bitflags are OR'd together to create an index into the pipelines array.
     pub const FEATURE_DEPTH: usize = 0b0001;
     pub const FEATURE_LIGHT: usize = 0b0010;
@@ -222,7 +218,7 @@ impl<'a> Gpu<'a> {
         )
     }
 
-    pub fn new(window: &Arc<Window>) -> Gpu<'a> {
+    pub fn new(window: &Arc<Window>) -> Gpu {
         let (surface, adapter) = {
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
@@ -358,12 +354,10 @@ impl<'a> Gpu<'a> {
             uniform_layout,
             texture_layout,
             textures: vec![],
-            frame: Frame {
-                uniform_queue_index: 0,
-                surface_texture: None,
-                command_encoder: None,
-                render_pass: None,
-            },
+            uniform_queue_index: 0,
+            surface_texture: None,
+            command_encoder: None,
+            render_pass: None,
             uniform_queue,
         };
 
@@ -588,11 +582,7 @@ impl<'a> Gpu<'a> {
 
     pub fn set_render_features(&mut self, feature_flags: usize) {
         let pipeline = &self.pipelines[feature_flags];
-        self.frame
-            .render_pass
-            .as_mut()
-            .unwrap()
-            .set_pipeline(&pipeline);
+        self.render_pass.as_mut().unwrap().set_pipeline(&pipeline);
     }
 
     pub fn begin_frame(&mut self) {
@@ -633,27 +623,27 @@ impl<'a> Gpu<'a> {
         // todo is it necessary to set the pipeline here?
         render_pass.set_pipeline(&self.pipelines[0]);
 
-        self.frame.surface_texture = Some(surface_texture);
-        self.frame.command_encoder = Some(command_encoder);
-        self.frame.render_pass = Some(render_pass);
+        self.surface_texture = Some(surface_texture);
+        self.command_encoder = Some(command_encoder);
+        self.render_pass = Some(render_pass);
     }
 
     pub fn finish_frame(&mut self) {
-        self.frame.render_pass = None; // Finish the render pass
+        self.render_pass = None; // Finish the render pass
 
-        let finished_command_buffer = take(&mut self.frame.command_encoder).unwrap().finish();
+        let finished_command_buffer = take(&mut self.command_encoder).unwrap().finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
 
-        self.frame.uniform_queue_index += 1;
-        if self.frame.uniform_queue_index >= MAX_SWAPCHAIN_SIZE {
-            self.frame.uniform_queue_index = 0;
+        self.uniform_queue_index += 1;
+        if self.uniform_queue_index >= MAX_SWAPCHAIN_SIZE {
+            self.uniform_queue_index = 0;
         }
 
-        take(&mut self.frame.surface_texture).unwrap().present();
+        take(&mut self.surface_texture).unwrap().present();
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
-        let uniform = match self.uniform_queue[self.frame.uniform_queue_index].pop() {
+        let uniform = match self.uniform_queue[self.uniform_queue_index].pop() {
             Some(m) => m,
             None => Uniform::new(&self.device, &self.uniform_layout),
         };
@@ -671,7 +661,7 @@ impl<'a> Gpu<'a> {
             &Uniform::as_bytes(&(aspect_ratio_transform * *matrix), &color),
         );
 
-        let render_pass = self.frame.render_pass.as_mut().unwrap();
+        let render_pass = self.render_pass.as_mut().unwrap();
 
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
@@ -684,7 +674,7 @@ impl<'a> Gpu<'a> {
 
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
-        let mut back_of_queue = self.frame.uniform_queue_index + MAX_SWAPCHAIN_SIZE - 1;
+        let mut back_of_queue = self.uniform_queue_index + MAX_SWAPCHAIN_SIZE - 1;
         if back_of_queue >= MAX_SWAPCHAIN_SIZE {
             back_of_queue = 0;
         }

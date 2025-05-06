@@ -23,14 +23,14 @@ use winit::{
 const WINDOW_WIDTH: u32 = 1200;
 const WINDOW_HEIGHT: u32 = 760;
 
-struct App<'a> {
+struct App {
     window: Option<Arc<Window>>,
-    gpu: Option<Gpu<'a>>,
+    gpu: Option<Gpu>,
     game: Option<Game>,
     mouse_pos: Vec2,
 }
 
-impl ApplicationHandler for App<'_> {
+impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let size = LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT);
 
