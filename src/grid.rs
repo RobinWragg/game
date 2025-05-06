@@ -297,13 +297,6 @@ impl Grid {
             }
         };
 
-        println!(
-            "step: {} spread A:{} B:{}",
-            step_counter,
-            step_counter % (SPREAD_FREQUENCY * 2) == 0,
-            step_counter % (SPREAD_FREQUENCY * 2) == SPREAD_FREQUENCY
-        );
-
         if step_counter % (SPREAD_FREQUENCY * 2) == 0 {
             for x in (0..SIZE).step_by(2) {
                 for y in (0..SIZE).step_by(2) {
@@ -313,7 +306,6 @@ impl Grid {
                 }
             }
         } else if step_counter % (SPREAD_FREQUENCY * 2) == SPREAD_FREQUENCY {
-            println!("spread B");
             for x in (1..SIZE - 1).step_by(2) {
                 for y in (1..SIZE - 1).step_by(2) {
                     for z in (1..SIZE - 1).step_by(2) {
@@ -469,7 +461,7 @@ impl Editor {
             _ => true,
         });
 
-        if global.should_step {
+        if global.is_playing || global.should_step {
             grid.step();
         }
 
