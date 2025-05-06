@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
+const SIZE: usize = 32;
+const SPREAD_FREQUENCY: u64 = 2;
+
 pub mod grid2d;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -171,16 +174,14 @@ impl AtomWithPos {
 
 pub struct Grid {
     atoms: Vec<Vec<Vec<Atom>>>,
-    flipper: bool,
+    step_counter: u64,
 }
 
 impl Grid {
-    const SIZE: usize = 16;
-
     pub fn new() -> Self {
         Self {
             atoms: vec![],
-            flipper: false,
+            step_counter: 0,
         }
     }
 
@@ -205,13 +206,12 @@ impl Grid {
             }
             Err(_) => {
                 println!("Creating new atoms");
-                let mut atoms =
-                    vec![vec![vec![Gas((0.0, Vec3::ZERO)); Self::SIZE]; Self::SIZE]; Self::SIZE];
+                let mut atoms = vec![vec![vec![Gas((0.0, Vec3::ZERO)); SIZE]; SIZE]; SIZE];
                 atoms[1][1][1] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
-                atoms[Self::SIZE - 2][1][1] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
-                atoms[1][Self::SIZE - 2][1] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
-                atoms[1][1][Self::SIZE - 2] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
-                atoms[Self::SIZE - 2][Self::SIZE - 2][Self::SIZE - 2] = Solid(Vec4::splat(1.0));
+                atoms[SIZE - 2][1][1] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
+                atoms[1][SIZE - 2][1] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
+                atoms[1][1][SIZE - 2] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
+                atoms[SIZE - 2][SIZE - 2][SIZE - 2] = Solid(Vec4::splat(1.0));
                 atoms
             }
         };
@@ -248,8 +248,8 @@ impl Grid {
         })
     }
 
-    fn mut_gas_pressures_3d(&mut self, pos: UVec3) -> Vec<&mut f32> {
-        let mut pressures = Vec::with_capacity(8); // Preallocate for 2x2x2 section
+    fn mut_gases_2x2x2(&mut self, pos: UVec3) -> Vec<&mut (f32, Vec3)> {
+        let mut gases = Vec::with_capacity(8); // Preallocate for 2x2x2 section
 
         let atoms_ptr = self.atoms.as_mut_ptr(); // Get a raw pointer to the outer grid
 
@@ -263,47 +263,60 @@ impl Grid {
                         let atom_ptr = (*column_ptr).as_mut_ptr().add(pos.z + dz);
 
                         // Dereference the pointer and check if it's a Gas atom
-                        if let Atom::Gas((pressure, _)) = &mut *atom_ptr {
-                            pressures.push(pressure);
+                        if let Atom::Gas(gas) = &mut *atom_ptr {
+                            gases.push(gas);
                         }
                     }
                 }
             }
         }
 
-        pressures
+        gases
     }
 
     fn spread_gas(&mut self) {
-        let f = self.flipper;
+        let step_counter = self.step_counter;
 
         let mut reach_local_equilibrium = |pos: UVec3| {
-            let pressures = self.mut_gas_pressures_3d(pos);
+            let gases = self.mut_gases_2x2x2(pos);
+            debug_assert_ne!(gases.len(), 0);
 
             let mut pressure_total = 0.0;
-            for pressure in &pressures {
-                pressure_total += **pressure;
+            let mut velocity_total = Vec3::ZERO;
+            for gas in &gases {
+                pressure_total += gas.0;
+                velocity_total += gas.1;
             }
 
-            let divided_total = pressure_total / pressures.len() as f32;
+            let divided_total_pressure = pressure_total / gases.len() as f32;
+            let divided_total_velocity = velocity_total / gases.len() as f32;
 
-            for pressure in pressures {
-                *pressure = divided_total;
+            for gas in gases {
+                gas.0 = divided_total_pressure;
+                gas.1 = divided_total_velocity;
             }
         };
 
-        if f {
-            for x in (0..Self::SIZE).step_by(2) {
-                for y in (0..Self::SIZE).step_by(2) {
-                    for z in (0..Self::SIZE).step_by(2) {
+        println!(
+            "step: {} spread A:{} B:{}",
+            step_counter,
+            step_counter % (SPREAD_FREQUENCY * 2) == 0,
+            step_counter % (SPREAD_FREQUENCY * 2) == SPREAD_FREQUENCY
+        );
+
+        if step_counter % (SPREAD_FREQUENCY * 2) == 0 {
+            for x in (0..SIZE).step_by(2) {
+                for y in (0..SIZE).step_by(2) {
+                    for z in (0..SIZE).step_by(2) {
                         reach_local_equilibrium(UVec3::new(x, y, z));
                     }
                 }
             }
-        } else {
-            for x in (1..Self::SIZE - 1).step_by(2) {
-                for y in (1..Self::SIZE - 1).step_by(2) {
-                    for z in (1..Self::SIZE - 1).step_by(2) {
+        } else if step_counter % (SPREAD_FREQUENCY * 2) == SPREAD_FREQUENCY {
+            println!("spread B");
+            for x in (1..SIZE - 1).step_by(2) {
+                for y in (1..SIZE - 1).step_by(2) {
+                    for z in (1..SIZE - 1).step_by(2) {
                         reach_local_equilibrium(UVec3::new(x, y, z));
                     }
                 }
@@ -313,14 +326,16 @@ impl Grid {
 
     fn apply_edge_vacuum(&mut self) {
         // TODO: This isn't writing over the edge planes, only the corners.
-        let s = Self::SIZE - 1;
-        for i in 0..Self::SIZE {
-            self.atoms[i][0][0] = Gas((0.0, Vec3::ZERO));
-            self.atoms[0][i][0] = Gas((0.0, Vec3::ZERO));
-            self.atoms[0][0][i] = Gas((0.0, Vec3::ZERO));
-            self.atoms[i][s][s] = Gas((0.0, Vec3::ZERO));
-            self.atoms[s][i][s] = Gas((0.0, Vec3::ZERO));
-            self.atoms[s][s][i] = Gas((0.0, Vec3::ZERO));
+        let s = SIZE - 1;
+        for a in 0..SIZE {
+            for b in 0..SIZE {
+                self.atoms[a][b][0] = Gas((0.0, Vec3::ZERO));
+                self.atoms[a][0][b] = Gas((0.0, Vec3::ZERO));
+                self.atoms[0][a][b] = Gas((0.0, Vec3::ZERO));
+                self.atoms[a][b][s] = Gas((0.0, Vec3::ZERO));
+                self.atoms[a][s][b] = Gas((0.0, Vec3::ZERO));
+                self.atoms[s][a][b] = Gas((0.0, Vec3::ZERO));
+            }
         }
     }
 
@@ -341,8 +356,8 @@ impl Grid {
         for source in sources {
             let pos = source.0;
             let source_v = source.1;
-            let adjacent =
-                adjacent_atom(pos, pos.as_vec3() + Vec3::splat(0.5) + source_v.normalize());
+            let adjacent = (pos.as_vec3() + Vec3::splat(0.5) + source_v.normalize()).as_usizevec3();
+            debug_assert_eq!(pos.manhattan_distance(adjacent), 1);
 
             if let Gas(old) = self.atoms[adjacent.x][adjacent.y][adjacent.z] {
                 let new_atom = sum_gas(&old, &(SOURCE_PRESSURE, source_v));
@@ -352,19 +367,59 @@ impl Grid {
     }
 
     fn simulate_gas_velocity(&mut self) {
-        // TODO
-        /*
-        If the velocity is enough to reach the next atom, then zero out the current atom and record that its p and v should be added to that next atom.
-        If the next atom isn't gas, remove that part of the velocity.
-         */
+        let mut gases_to_zero = vec![];
+        let mut gases_to_add = vec![];
+
+        for src_pos in self.positions() {
+            if let Gas(src) = self.at(src_pos) {
+                if src.1.length_squared() < 0.001 {
+                    continue;
+                }
+
+                let dst_pos =
+                    (src_pos.as_vec3() + Vec3::splat(0.5) + src.1.normalize()).as_usizevec3();
+                debug_assert!(src_pos.chebyshev_distance(dst_pos) <= 1);
+                debug_assert_ne!(src_pos, dst_pos);
+
+                if dst_pos.x < SIZE && dst_pos.y < SIZE && dst_pos.z < SIZE {
+                    if let Gas(_) = self.atoms[dst_pos.x][dst_pos.y][dst_pos.z] {
+                        gases_to_add.push((dst_pos, *src));
+                    }
+                }
+
+                // TODO: If a gas hits a solid obliquely, it should maintain part of its velocity.
+                gases_to_zero.push(src_pos);
+            }
+        }
+
+        for to_zero in gases_to_zero {
+            self.atoms[to_zero.x][to_zero.y][to_zero.z] = Gas((0.0, Vec3::ZERO));
+        }
+
+        for (dst_pos, src) in gases_to_add {
+            if let Gas(dst) = &self.atoms[dst_pos.x][dst_pos.y][dst_pos.z] {
+                self.atoms[dst_pos.x][dst_pos.y][dst_pos.z] = sum_gas(dst, &src);
+            }
+        }
+    }
+
+    fn print_p(&self, label: &str) {
+        let mut total_p = 0.0;
+        for p in self.positions() {
+            if let Gas((p, _)) = self.at(p) {
+                total_p += p;
+            }
+        }
+        println!("{} {}", label, total_p);
     }
 
     fn step(&mut self) {
-        self.spread_gas();
+        self.simulate_gas_velocity();
         self.step_gas_source();
+        self.spread_gas();
         self.apply_edge_vacuum();
 
-        self.flipper = !self.flipper;
+        self.step_counter = self.step_counter.wrapping_add(1);
     }
 }
 
@@ -433,7 +488,7 @@ impl Editor {
 
         self.camera_transform = {
             let depth_buffer_resolution = 0.01;
-            let arbitrary_scale = 0.07;
+            let arbitrary_scale = 0.04;
             let scale = Mat4::from_scale(Vec3::new(
                 arbitrary_scale,
                 arbitrary_scale,
@@ -441,7 +496,7 @@ impl Editor {
             ));
             // The viable Z range is 0 to 1, so put it in the middle.
             let translate_z = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.5));
-            let half_size = Grid::SIZE as f32 / 2.0;
+            let half_size = SIZE as f32 / 2.0;
             let translate_to_center = Mat4::from_translation(Vec3::splat(-half_size));
             let rotation =
                 Mat4::from_rotation_x(self.rotation.y) * Mat4::from_rotation_y(self.rotation.x);
@@ -489,7 +544,7 @@ impl Editor {
                 let new_atom = match global.selected_atom_type {
                     Solid(_) => Solid(Vec4::new(0.5, 0.5, 0.5, 1.0)),
                     Gas(_) => Gas((1.0, Vec3::ZERO)),
-                    GasSource(_) => GasSource(Vec3::new(1.0, 0.0, 0.0)),
+                    GasSource(_) => GasSource(Vec3::new(100.0, 0.0, 0.0)),
                 };
                 *grid.at_mut(position) = new_atom;
             }
