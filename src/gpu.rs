@@ -1,11 +1,19 @@
 use crate::math::transform_2d;
 use crate::prelude::*;
+use bitflags::bitflags;
 use bytemuck;
 use pollster;
 use std::mem::{size_of, swap, take};
 use std::sync::Arc;
 use wgpu;
 use winit::window::Window;
+
+bitflags! {
+    pub struct RenderFeatures: usize {
+        const DEPTH = 0b0001;
+        const LIGHT = 0b0010;
+    }
+}
 
 const WHITE_TEXTURE_ID: usize = 0;
 const MAX_SWAPCHAIN_SIZE: usize = 3;
@@ -174,20 +182,16 @@ pub struct Gpu {
     uniform_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    uniform_queue_index: usize,
+    uniform_ring_index: usize,
     surface_texture: Option<wgpu::SurfaceTexture>,
     command_encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
-    uniform_queue: Vec<Vec<Uniform>>,
+    uniform_ring: Vec<Vec<Uniform>>,
     width: usize,
     height: usize,
 }
 
 impl Gpu {
-    // These bitflags are OR'd together to create an index into the pipelines array.
-    pub const FEATURE_DEPTH: usize = 0b0001;
-    pub const FEATURE_LIGHT: usize = 0b0010;
-
     pub fn width(&self) -> usize {
         self.width
     }
@@ -314,13 +318,24 @@ impl Gpu {
         });
 
         let pipelines: [wgpu::RenderPipeline; 4] = {
+            // For every feature e.g. DEPTH and LIGHT, we need:
+            // A pipeline with depth+light
+            // A pipeline with depth+nolight
+            // A pipeline with light+nodepth
+            // A pipeline with nodepth+nolight
+            let feature_combinations_count = RenderFeatures::all()
+                .iter()
+                .map(|f| 2)
+                .reduce(|a, b| a * b)
+                .unwrap();
+
             let mut pipelines = vec![];
-            for flags in 0..4 {
+            for flags in 0..feature_combinations_count {
                 pipelines.push(Self::create_pipeline(
                     &device,
                     &surface_config,
                     &[&uniform_layout, &texture_layout],
-                    flags,
+                    RenderFeatures::from_bits(flags).unwrap(),
                 ));
             }
             pipelines.try_into().unwrap()
@@ -341,7 +356,7 @@ impl Gpu {
             view_formats: &[],
         });
 
-        let uniform_queue = (0..MAX_SWAPCHAIN_SIZE).map(|_| Vec::new()).collect();
+        let uniform_ring = (0..MAX_SWAPCHAIN_SIZE).map(|_| Vec::new()).collect();
 
         let mut gpu = Self {
             width: window.inner_size().width as usize,
@@ -354,11 +369,11 @@ impl Gpu {
             uniform_layout,
             texture_layout,
             textures: vec![],
-            uniform_queue_index: 0,
+            uniform_ring_index: 0,
             surface_texture: None,
             command_encoder: None,
             render_pass: None,
-            uniform_queue,
+            uniform_ring,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -375,7 +390,7 @@ impl Gpu {
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
-        feature_flags: usize,
+        features: RenderFeatures,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/default.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -422,7 +437,7 @@ impl Gpu {
 
         let mut compilation_options: wgpu::PipelineCompilationOptions = Default::default();
         let mut constants_hash = HashMap::new();
-        if feature_flags & Gpu::FEATURE_LIGHT != 0 {
+        if features.contains(RenderFeatures::LIGHT) {
             constants_hash.insert("LIGHTING_ENABLED".to_string(), 1.0);
         }
         compilation_options.constants = &constants_hash;
@@ -463,7 +478,7 @@ impl Gpu {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
-                depth_compare: if feature_flags & Gpu::FEATURE_DEPTH != 0 {
+                depth_compare: if features.contains(RenderFeatures::DEPTH) {
                     wgpu::CompareFunction::Less
                 } else {
                     wgpu::CompareFunction::Always
@@ -580,8 +595,8 @@ impl Gpu {
         );
     }
 
-    pub fn set_render_features(&mut self, feature_flags: usize) {
-        let pipeline = &self.pipelines[feature_flags];
+    pub fn set_render_features(&mut self, features: RenderFeatures) {
+        let pipeline = &self.pipelines[features.bits()];
         self.render_pass.as_mut().unwrap().set_pipeline(&pipeline);
     }
 
@@ -634,16 +649,16 @@ impl Gpu {
         let finished_command_buffer = take(&mut self.command_encoder).unwrap().finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
 
-        self.uniform_queue_index += 1;
-        if self.uniform_queue_index >= MAX_SWAPCHAIN_SIZE {
-            self.uniform_queue_index = 0;
+        self.uniform_ring_index += 1;
+        if self.uniform_ring_index >= MAX_SWAPCHAIN_SIZE {
+            self.uniform_ring_index = 0;
         }
 
         take(&mut self.surface_texture).unwrap().present();
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
-        let uniform = match self.uniform_queue[self.uniform_queue_index].pop() {
+        let uniform = match self.uniform_ring[self.uniform_ring_index].pop() {
             Some(m) => m,
             None => Uniform::new(&self.device, &self.uniform_layout),
         };
@@ -674,10 +689,10 @@ impl Gpu {
 
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
-        let mut back_of_queue = self.uniform_queue_index + MAX_SWAPCHAIN_SIZE - 1;
-        if back_of_queue >= MAX_SWAPCHAIN_SIZE {
-            back_of_queue = 0;
+        let mut end_of_ring = self.uniform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
+        if end_of_ring >= MAX_SWAPCHAIN_SIZE {
+            end_of_ring = 0;
         }
-        self.uniform_queue[back_of_queue].push(uniform);
+        self.uniform_ring[end_of_ring].push(uniform);
     }
 }
