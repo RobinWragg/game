@@ -8,6 +8,7 @@ use wgpu;
 use winit::window::Window;
 
 const WHITE_TEXTURE_ID: usize = 0;
+const MAX_SWAPCHAIN_SIZE: usize = 3;
 
 struct Texture {
     texture: wgpu::Texture,
@@ -16,6 +17,7 @@ struct Texture {
 }
 
 struct Frame {
+    uniform_queue_index: usize,
     surface_texture: Option<wgpu::SurfaceTexture>,
     command_encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
@@ -180,8 +182,7 @@ pub struct Gpu<'a> {
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
     frame: Frame,
-    busy_uniforms: Vec<Uniform>,
-    idle_uniforms: Vec<Uniform>,
+    uniform_queue: Vec<Vec<Uniform>>,
     width: usize,
     height: usize,
 }
@@ -344,6 +345,8 @@ impl<'a> Gpu<'a> {
             view_formats: &[],
         });
 
+        let uniform_queue = (0..MAX_SWAPCHAIN_SIZE).map(|_| Vec::new()).collect();
+
         let mut gpu = Self {
             width: window.inner_size().width as usize,
             height: window.inner_size().height as usize,
@@ -356,12 +359,12 @@ impl<'a> Gpu<'a> {
             texture_layout,
             textures: vec![],
             frame: Frame {
+                uniform_queue_index: 0,
                 surface_texture: None,
                 command_encoder: None,
                 render_pass: None,
             },
-            busy_uniforms: vec![],
-            idle_uniforms: vec![],
+            uniform_queue,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -641,13 +644,16 @@ impl<'a> Gpu<'a> {
         let finished_command_buffer = take(&mut self.frame.command_encoder).unwrap().finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
 
-        swap(&mut self.idle_uniforms, &mut self.busy_uniforms);
+        self.frame.uniform_queue_index += 1;
+        if self.frame.uniform_queue_index >= MAX_SWAPCHAIN_SIZE {
+            self.frame.uniform_queue_index = 0;
+        }
 
         take(&mut self.frame.surface_texture).unwrap().present();
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
-        let uniform = match self.idle_uniforms.pop() {
+        let uniform = match self.uniform_queue[self.frame.uniform_queue_index].pop() {
             Some(m) => m,
             None => Uniform::new(&self.device, &self.uniform_layout),
         };
@@ -678,6 +684,10 @@ impl<'a> Gpu<'a> {
 
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
-        self.busy_uniforms.push(uniform);
+        let mut back_of_queue = self.frame.uniform_queue_index + MAX_SWAPCHAIN_SIZE - 1;
+        if back_of_queue >= MAX_SWAPCHAIN_SIZE {
+            back_of_queue = 0;
+        }
+        self.uniform_queue[back_of_queue].push(uniform);
     }
 }
