@@ -1,4 +1,3 @@
-use crate::grid::grid2d::{Atom2d, EditorState};
 use crate::grid::Atom;
 use crate::math::transform_2d;
 use crate::prelude::*;
@@ -11,11 +10,10 @@ use egui::epaint::{image::ImageData, textures::*};
 pub struct Debugger {
     ctx: egui::Context,
     egui_to_gpu_tex_id: HashMap<u64, usize>,
-    delta_times: VecDeque<f32>,
+    delta_times: HashMap<String, VecDeque<f32>>,
     input: egui::RawInput,
     matrix: Mat4,
     full_output: egui::FullOutput,
-    pub editor_state: EditorState,
 }
 
 impl Debugger {
@@ -30,6 +28,18 @@ impl Debugger {
                 }
             })
             .unwrap()
+    }
+
+    pub fn profile<F: FnOnce() -> ()>(&mut self, name: &str, f: F) {
+        let start = Instant::now();
+        f();
+        let dt = start.elapsed().as_secs_f32();
+
+        if !self.delta_times.contains_key(name) {
+            self.delta_times.insert(name.to_string(), VecDeque::new());
+        }
+
+        self.delta_times.get_mut(name).unwrap().push_back(dt);
     }
 
     pub fn update(&mut self, events: &mut VecDeque<Event>, dt: f32, gpu: &Gpu) {
@@ -72,6 +82,19 @@ impl Debugger {
             }
         });
 
+        if !self.delta_times.contains_key("total") {
+            self.delta_times
+                .insert("total".to_string(), VecDeque::new());
+        }
+
+        self.delta_times.get_mut("total").unwrap().push_back(dt);
+
+        for v in self.delta_times.values_mut() {
+            while v.len() > 60 {
+                v.pop_front();
+            }
+        }
+
         self.ctx.set_pixels_per_point(2.0); // TODO: customise this based on window height?
 
         self.matrix = {
@@ -88,15 +111,10 @@ impl Debugger {
 
             egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    // TODO: Update the displayed time every second instead of every 60 frames.
-                    // TODO: also, switch to processing time.
-                    self.delta_times.push_back(dt);
-                    if self.delta_times.len() > 60 {
-                        self.delta_times.pop_front();
+                    for key in self.delta_times.keys() {
+                        let max_dt = Self::max_dt(&self.delta_times[key]);
+                        ui.label(format!("{}: {:.1}ms", key, max_dt * 1000.0));
                     }
-
-                    let max_dt = Self::max_dt(&self.delta_times);
-                    ui.label(format!("Worst frame: {:.1}ms", max_dt * 1000.0));
                 });
             });
             egui::Window::new("Editor").show(&ctx, |ui| {
@@ -117,18 +135,13 @@ impl Debugger {
                         "GasSource",
                     );
                 });
-                if let Atom2d::Gas(pressure) = &mut self.editor_state.current_atom {
-                    ui.add(egui::Slider::new(pressure, -100.0..=100.0).text("Pressure"));
-                }
 
-                self.editor_state.should_reload = ui.button("Reload").clicked();
+                ui.add(
+                    egui::Slider::new(&mut global.spread_interval, 1..=16).text("Spread Interval"),
+                );
 
                 if ui
-                    .button(if global.is_playing {
-                        "Pause"
-                    } else {
-                        "Play"
-                    })
+                    .button(if global.is_playing { "Pause" } else { "Play" })
                     .clicked()
                 {
                     global.is_playing = !global.is_playing;
@@ -140,7 +153,7 @@ impl Debugger {
     }
 
     pub fn render(&mut self, gpu: &mut Gpu) {
-        gpu.set_render_features(0);
+        gpu.set_render_features(RenderFeatures::empty());
 
         if !self.full_output.textures_delta.set.is_empty() {
             assert_eq!(self.full_output.textures_delta.set.len(), 1);

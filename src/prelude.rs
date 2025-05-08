@@ -20,6 +20,7 @@ pub struct Global {
     pub selected_atom_type: Atom,
     pub should_step: bool,
     pub is_playing: bool,
+    pub spread_interval: u64,
 }
 
 pub static GLOBAL: Lazy<Mutex<Global>> = Lazy::new(|| {
@@ -27,6 +28,7 @@ pub static GLOBAL: Lazy<Mutex<Global>> = Lazy::new(|| {
         selected_atom_type: Atom::Solid(Vec4::ZERO),
         should_step: false,
         is_playing: false,
+        spread_interval: 1,
     })
 });
 

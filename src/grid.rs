@@ -6,7 +6,6 @@ use std::fs::File;
 use std::io::{Read, Write};
 
 const SIZE: usize = 32;
-const SPREAD_FREQUENCY: u64 = 2;
 
 pub mod grid2d;
 
@@ -274,7 +273,7 @@ impl Grid {
         gases
     }
 
-    fn spread_gas(&mut self) {
+    fn spread_gas(&mut self, spread_interval: u64) {
         let step_counter = self.step_counter;
 
         let mut reach_local_equilibrium = |pos: UVec3| {
@@ -297,7 +296,7 @@ impl Grid {
             }
         };
 
-        if step_counter % (SPREAD_FREQUENCY * 2) == 0 {
+        if step_counter % (spread_interval * 2) == 0 {
             for x in (0..SIZE).step_by(2) {
                 for y in (0..SIZE).step_by(2) {
                     for z in (0..SIZE).step_by(2) {
@@ -305,7 +304,7 @@ impl Grid {
                     }
                 }
             }
-        } else if step_counter % (SPREAD_FREQUENCY * 2) == SPREAD_FREQUENCY {
+        } else if step_counter % (spread_interval * 2) == spread_interval {
             for x in (1..SIZE - 1).step_by(2) {
                 for y in (1..SIZE - 1).step_by(2) {
                     for z in (1..SIZE - 1).step_by(2) {
@@ -405,10 +404,10 @@ impl Grid {
         println!("{} {}", label, total_p);
     }
 
-    fn step(&mut self) {
+    fn step(&mut self, spread_interval: u64) {
         self.simulate_gas_velocity();
         self.step_gas_source();
-        self.spread_gas();
+        self.spread_gas(spread_interval);
         self.apply_edge_vacuum();
 
         self.step_counter = self.step_counter.wrapping_add(1);
@@ -462,7 +461,7 @@ impl Editor {
         });
 
         if global.is_playing || global.should_step {
-            grid.step();
+            grid.step(global.spread_interval);
         }
 
         // Camera rotation TODO: test whether this is framerate dependent

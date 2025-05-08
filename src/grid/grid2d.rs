@@ -6,15 +6,6 @@ use std::io::{Read, Write};
 
 pub const GRID_SIZE: usize = 4;
 
-// TODO: use a hashmap instead?
-#[derive(Default, Copy, Clone)]
-pub struct EditorState {
-    pub current_atom: Atom2d,
-    pub should_reload: bool,
-    pub is_playing: bool,
-    pub should_step: bool,
-}
-
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Atom2d {
     Gas(f32),
@@ -70,7 +61,7 @@ impl Grid2d {
         grid
     }
 
-    fn modify_under_path(&mut self, start: &Vec2, end: &Vec2, editor: &EditorState) {
+    fn modify_under_path(&mut self, start: &Vec2, end: &Vec2, atom_to_write: Atom2d) {
         // TODO: I'm not sure when the best time to transform from Vec2 to (usize, usize) is. I think this fn shouldn't be aware of the editor either. The pub interface to the grid can convert Vec2 to (usize, usize) and inspect the editor before getting here.
         let start = transform_2d(&start, &self.transform.inverse());
         let end = transform_2d(end, &self.transform.inverse());
@@ -85,7 +76,7 @@ impl Grid2d {
         );
 
         for (x, y) in Grid2d::atoms_on_path(start, end) {
-            self.atoms[x][y] = editor.current_atom;
+            self.atoms[x][y] = atom_to_write;
         }
     }
 
@@ -157,14 +148,8 @@ impl Grid2d {
         pressures
     }
 
-    pub fn update(&mut self, editor: &EditorState) {
-        if editor.should_reload {
-            self.atoms = Self::load().atoms;
-        }
-
-        if editor.is_playing || editor.should_step {
-            self.update_gas_with_2x2_equilibrium();
-        }
+    pub fn update(&mut self) {
+        self.update_gas_with_2x2_equilibrium();
 
         self.mover += 0.01;
     }

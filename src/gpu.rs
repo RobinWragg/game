@@ -650,8 +650,8 @@ impl Gpu {
         self.queue.submit(std::iter::once(finished_command_buffer));
 
         self.uniform_ring_index += 1;
-        if self.uniform_ring_index >= MAX_SWAPCHAIN_SIZE {
-            self.uniform_ring_index = 0;
+        while self.uniform_ring_index >= MAX_SWAPCHAIN_SIZE {
+            self.uniform_ring_index -= MAX_SWAPCHAIN_SIZE;
         }
 
         take(&mut self.surface_texture).unwrap().present();
@@ -662,6 +662,13 @@ impl Gpu {
             Some(m) => m,
             None => Uniform::new(&self.device, &self.uniform_layout),
         };
+
+        println!(
+            "ring {} {} {}",
+            self.uniform_ring[0].len(),
+            self.uniform_ring[1].len(),
+            self.uniform_ring[2].len()
+        );
 
         // Write the uniform to its wgpu buffer
         let color = match color {
@@ -690,9 +697,10 @@ impl Gpu {
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
         let mut end_of_ring = self.uniform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
-        if end_of_ring >= MAX_SWAPCHAIN_SIZE {
-            end_of_ring = 0;
+        while end_of_ring >= MAX_SWAPCHAIN_SIZE {
+            end_of_ring -= MAX_SWAPCHAIN_SIZE;
         }
+
         self.uniform_ring[end_of_ring].push(uniform);
     }
 }

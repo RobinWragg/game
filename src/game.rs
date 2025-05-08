@@ -55,13 +55,15 @@ impl Game {
 
         self.debugger.update(&mut events, delta_time, gpu);
 
-        // self.update_and_render_grid(&mut events, self.debugger.editor_state, gpu);
+        self.debugger.profile("Update", || {
+            self.grid_editor.update(&mut self.grid, &mut events);
+        });
 
-        self.grid_editor.update(&mut self.grid, &mut events);
-        self.grid_editor.render_ortho(&self.grid, gpu);
-
-        self.grid_viewer
-            .render(&self.grid, Vec2::new(1.0, 0.0), gpu);
+        self.debugger.profile("Render", || {
+            // self.grid_editor.render_ortho(&self.grid, gpu);
+            self.grid_viewer
+                .render(&self.grid, Vec2::new(1.0, 0.0), gpu);
+        });
 
         self.debugger.render(gpu);
         gpu.finish_frame();
