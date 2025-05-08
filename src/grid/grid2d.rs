@@ -199,15 +199,15 @@ impl Grid2d {
         gpu.set_render_features(RenderFeatures::DEPTH);
 
         let verts = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.9, 0.0),
-            Vec2::new(0.0, 0.9),
-            Vec2::new(0.0, 0.9),
-            Vec2::new(0.9, 0.0),
-            Vec2::new(0.9, 0.9),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.9, 0.0, 0.0),
+            Vec3::new(0.0, 0.9, 0.0),
+            Vec3::new(0.0, 0.9, 0.0),
+            Vec3::new(0.9, 0.0, 0.0),
+            Vec3::new(0.9, 0.9, 0.0),
         ];
 
-        let mesh = Mesh::new_2d(&verts, None, None, gpu);
+        let mesh = gpu.create_mesh(&verts, None, None);
 
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {

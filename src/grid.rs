@@ -549,7 +549,7 @@ impl Editor {
     pub fn render_ortho(&self, grid: &Grid, gpu: &mut Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT);
 
-        let mesh = Mesh::new(&cube_triangles(), None, None, gpu);
+        let mesh = gpu.create_mesh(&cube_triangles(), None, None);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let half_trans_inv = half_trans.inverse();
@@ -636,7 +636,7 @@ impl Viewer {
             top_intensity,
         ];
 
-        let mesh = Mesh::new(&verts, Some(&intensities), None, gpu);
+        let mesh = gpu.create_mesh(&verts, Some(&intensities), None);
         let camera_transform = Mat4::from_translation(global_translation.extend(0.5))
             * Mat4::from_scale(Vec3::splat(0.005));
 

@@ -30,92 +30,7 @@ pub struct Mesh {
     normals: wgpu::Buffer,
     colors: wgpu::Buffer,
     uvs: wgpu::Buffer,
-    pub texture: usize, // TODO: this pub is smelly.
-}
-
-impl Mesh {
-    pub fn new(
-        positions: &[Vec3],
-        colors: Option<&[Vec4]>,
-        texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        gpu: &Gpu,
-    ) -> Self {
-        let v_count = positions.len();
-
-        let pos_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 3]>(), &gpu.device);
-        let normal_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 3]>(), &gpu.device);
-        let color_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 4]>(), &gpu.device);
-        let uv_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 2]>(), &gpu.device);
-
-        gpu.queue
-            .write_buffer(&pos_buf, 0, bytemuck::cast_slice(positions));
-
-        // Default normals for each triangle
-        let mut normals = vec![Vec3::ZERO; v_count];
-        for i in (0..v_count).step_by(3) {
-            let v0 = positions[i];
-            let v1 = positions[i + 1];
-            let v2 = positions[i + 2];
-            let normal = (v1 - v0).cross(v2 - v0).normalize();
-
-            normals[i] = normal;
-            normals[i + 1] = normal;
-            normals[i + 2] = normal;
-        }
-        gpu.queue
-            .write_buffer(&normal_buf, 0, bytemuck::cast_slice(&normals));
-
-        if let Some(colors) = colors {
-            debug_assert_eq!(colors.len(), v_count);
-            gpu.queue
-                .write_buffer(&color_buf, 0, bytemuck::cast_slice(colors));
-        } else {
-            // Disable vertex colors by just multiplying the texture with white in the shader.
-            let whites = vec![Vec4::splat(1.0); positions.len()];
-            gpu.queue
-                .write_buffer(&color_buf, 0, bytemuck::cast_slice(&whites));
-        }
-
-        let tex_id = if let Some((id, uvs)) = texture_id_and_uvs {
-            debug_assert_eq!(uvs.len(), v_count);
-            gpu.queue
-                .write_buffer(&uv_buf, 0, bytemuck::cast_slice(uvs));
-            id
-        } else {
-            WHITE_TEXTURE_ID
-        };
-
-        Mesh {
-            vert_count: v_count,
-            positions: pos_buf,
-            normals: normal_buf,
-            colors: color_buf,
-            uvs: uv_buf,
-            texture: tex_id,
-        }
-    }
-
-    pub fn new_2d(
-        positions: &[Vec2],
-        vert_colors: Option<&[Vec4]>,
-        texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        gpu: &Gpu,
-    ) -> Self {
-        let mut positions_3d = Vec::with_capacity(positions.len());
-        for pos in positions {
-            positions_3d.push(Vec3::new(pos.x, pos.y, 0.0));
-        }
-        Self::new(&positions_3d, vert_colors, texture_id_and_uvs, gpu)
-    }
-
-    fn create_vertex_buffer(num_bytes: usize, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: num_bytes as u64,
-            mapped_at_creation: false,
-        })
-    }
+    texture: usize,
 }
 
 struct Uniform {
@@ -208,7 +123,7 @@ impl Gpu {
         )
     }
 
-    pub fn new(window: &Arc<Window>) -> Gpu {
+    pub fn new(window: &Arc<Window>) -> Self {
         let (surface, adapter) = {
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
@@ -479,6 +394,75 @@ impl Gpu {
             },
             multiview: None,
             cache: None,
+        })
+    }
+
+    pub fn create_mesh(
+        &self,
+        positions: &[Vec3],
+        colors: Option<&[Vec4]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
+    ) -> Mesh {
+        let v_count = positions.len();
+
+        let pos_buf = self.create_vertex_buffer(v_count * size_of::<Vec3>());
+        self.queue
+            .write_buffer(&pos_buf, 0, bytemuck::cast_slice(positions));
+
+        // Default normals for each triangle
+        let normal_buf = self.create_vertex_buffer(v_count * size_of::<Vec3>());
+        let mut normals = vec![Vec3::ZERO; v_count];
+        for i in (0..v_count).step_by(3) {
+            let v0 = positions[i];
+            let v1 = positions[i + 1];
+            let v2 = positions[i + 2];
+            let normal = (v1 - v0).cross(v2 - v0).normalize();
+
+            normals[i] = normal;
+            normals[i + 1] = normal;
+            normals[i + 2] = normal;
+        }
+        self.queue
+            .write_buffer(&normal_buf, 0, bytemuck::cast_slice(&normals));
+
+        let color_buf = self.create_vertex_buffer(v_count * size_of::<Vec4>());
+        if let Some(colors) = colors {
+            debug_assert_eq!(colors.len(), v_count);
+            self.queue
+                .write_buffer(&color_buf, 0, bytemuck::cast_slice(colors));
+        } else {
+            // Disable vertex colors by just multiplying the texture with white in the shader.
+            let whites = vec![Vec4::splat(1.0); positions.len()];
+            self.queue
+                .write_buffer(&color_buf, 0, bytemuck::cast_slice(&whites));
+        }
+
+        let uv_buf = self.create_vertex_buffer(v_count * size_of::<Vec2>());
+        let tex_id = if let Some((id, uvs)) = texture_id_and_uvs {
+            debug_assert_eq!(uvs.len(), v_count);
+            self.queue
+                .write_buffer(&uv_buf, 0, bytemuck::cast_slice(uvs));
+            id
+        } else {
+            WHITE_TEXTURE_ID
+        };
+
+        Mesh {
+            vert_count: v_count,
+            positions: pos_buf,
+            normals: normal_buf,
+            colors: color_buf,
+            uvs: uv_buf,
+            texture: tex_id,
+        }
+    }
+
+    fn create_vertex_buffer(&self, num_bytes: usize) -> wgpu::Buffer {
+        self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: num_bytes as u64,
+            mapped_at_creation: false,
         })
     }
 

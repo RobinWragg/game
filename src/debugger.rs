@@ -203,7 +203,7 @@ impl Debugger {
             let mut vert_uvs = Vec::with_capacity(mesh.indices.len());
             for index in mesh.indices {
                 let vert = mesh.vertices[index as usize];
-                vert_positions.push(Vec2::new(vert.pos.x, vert.pos.y));
+                vert_positions.push(Vec3::new(vert.pos.x, vert.pos.y, 0.0));
                 let rgba = vert.color.to_array(); // TODO: this is premultiplied
                 vert_colors.extend_from_slice(&rgba);
                 vert_uvs.push(Vec2::new(vert.uv.x, vert.uv.y));
@@ -231,11 +231,10 @@ impl Debugger {
             let gpu_tex_id = *self.egui_to_gpu_tex_id.get(&egui_tex_id).unwrap();
             assert!(gpu_tex_id != 0);
 
-            let mesh = Mesh::new_2d(
+            let mesh = gpu.create_mesh(
                 &vert_positions,
                 Some(&vert_colors),
                 Some((gpu_tex_id, &vert_uvs)),
-                gpu,
             );
             gpu.render_mesh(&mesh, &self.matrix, None);
         }
