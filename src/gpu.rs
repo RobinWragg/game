@@ -28,7 +28,7 @@ pub struct Mesh {
     vert_count: usize,
     positions: wgpu::Buffer,
     normals: wgpu::Buffer,
-    vert_colors: wgpu::Buffer,
+    colors: wgpu::Buffer,
     uvs: wgpu::Buffer,
     pub texture: usize, // TODO: this pub is smelly.
 }
@@ -36,13 +36,63 @@ pub struct Mesh {
 impl Mesh {
     pub fn new(
         positions: &[Vec3],
-        vert_colors: Option<&[Vec4]>,
+        colors: Option<&[Vec4]>,
         texture_id_and_uvs: Option<(usize, &[Vec2])>,
         gpu: &Gpu,
     ) -> Self {
-        let mut mesh = Self::allocate(positions.len(), gpu);
-        mesh.write(positions, vert_colors, texture_id_and_uvs, gpu);
-        mesh
+        let v_count = positions.len();
+
+        let pos_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 3]>(), &gpu.device);
+        let normal_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 3]>(), &gpu.device);
+        let color_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 4]>(), &gpu.device);
+        let uv_buf = Self::create_vertex_buffer(v_count * size_of::<[f32; 2]>(), &gpu.device);
+
+        gpu.queue
+            .write_buffer(&pos_buf, 0, bytemuck::cast_slice(positions));
+
+        // Default normals for each triangle
+        let mut normals = vec![Vec3::ZERO; v_count];
+        for i in (0..v_count).step_by(3) {
+            let v0 = positions[i];
+            let v1 = positions[i + 1];
+            let v2 = positions[i + 2];
+            let normal = (v1 - v0).cross(v2 - v0).normalize();
+
+            normals[i] = normal;
+            normals[i + 1] = normal;
+            normals[i + 2] = normal;
+        }
+        gpu.queue
+            .write_buffer(&normal_buf, 0, bytemuck::cast_slice(&normals));
+
+        if let Some(colors) = colors {
+            debug_assert_eq!(colors.len(), v_count);
+            gpu.queue
+                .write_buffer(&color_buf, 0, bytemuck::cast_slice(colors));
+        } else {
+            // Disable vertex colors by just multiplying the texture with white in the shader.
+            let whites = vec![Vec4::splat(1.0); positions.len()];
+            gpu.queue
+                .write_buffer(&color_buf, 0, bytemuck::cast_slice(&whites));
+        }
+
+        let tex_id = if let Some((id, uvs)) = texture_id_and_uvs {
+            debug_assert_eq!(uvs.len(), v_count);
+            gpu.queue
+                .write_buffer(&uv_buf, 0, bytemuck::cast_slice(uvs));
+            id
+        } else {
+            WHITE_TEXTURE_ID
+        };
+
+        Mesh {
+            vert_count: v_count,
+            positions: pos_buf,
+            normals: normal_buf,
+            colors: color_buf,
+            uvs: uv_buf,
+            texture: tex_id,
+        }
     }
 
     pub fn new_2d(
@@ -56,70 +106,6 @@ impl Mesh {
             positions_3d.push(Vec3::new(pos.x, pos.y, 0.0));
         }
         Self::new(&positions_3d, vert_colors, texture_id_and_uvs, gpu)
-    }
-
-    fn allocate(vert_count: usize, gpu: &Gpu) -> Self {
-        let positions = Self::create_vertex_buffer(vert_count * size_of::<[f32; 3]>(), &gpu.device);
-        let normals = Self::create_vertex_buffer(vert_count * size_of::<[f32; 3]>(), &gpu.device);
-        let vert_colors =
-            Self::create_vertex_buffer(vert_count * size_of::<[f32; 4]>(), &gpu.device);
-        let uvs = Self::create_vertex_buffer(vert_count * size_of::<[f32; 2]>(), &gpu.device);
-
-        Self {
-            vert_count,
-            positions,
-            normals,
-            vert_colors,
-            uvs,
-            texture: 0,
-        }
-    }
-
-    fn write(
-        &mut self,
-        positions: &[Vec3],
-        vert_colors: Option<&[Vec4]>,
-        texture_id_and_uvs: Option<(usize, &[Vec2])>,
-        gpu: &Gpu,
-    ) {
-        debug_assert_eq!(positions.len(), self.vert_count);
-        gpu.queue
-            .write_buffer(&self.positions, 0, bytemuck::cast_slice(positions));
-
-        // Default normals for each triangle
-        let mut normals = vec![Vec3::ZERO; self.vert_count];
-        for i in (0..positions.len()).step_by(3) {
-            let v0 = positions[i];
-            let v1 = positions[i + 1];
-            let v2 = positions[i + 2];
-            let normal = (v1 - v0).cross(v2 - v0).normalize();
-
-            normals[i] = normal;
-            normals[i + 1] = normal;
-            normals[i + 2] = normal;
-        }
-        gpu.queue
-            .write_buffer(&self.normals, 0, bytemuck::cast_slice(&normals));
-
-        if let Some(colors) = vert_colors {
-            debug_assert_eq!(colors.len(), self.vert_count);
-            gpu.queue
-                .write_buffer(&self.vert_colors, 0, bytemuck::cast_slice(colors));
-        } else {
-            // Disable vertex colors by just multiplying the texture with white in the shader.
-            let whites = vec![Vec4::splat(1.0); positions.len()];
-            gpu.queue
-                .write_buffer(&self.vert_colors, 0, bytemuck::cast_slice(&whites));
-        }
-
-        if let Some((id, uvs)) = texture_id_and_uvs {
-            self.texture = id;
-            debug_assert_eq!(uvs.len(), self.vert_count);
-            gpu.queue
-                .write_buffer(&self.uvs, 0, bytemuck::cast_slice(uvs));
-        } else {
-            self.texture = WHITE_TEXTURE_ID;
-        }
     }
 
     fn create_vertex_buffer(num_bytes: usize, device: &wgpu::Device) -> wgpu::Buffer {
@@ -663,17 +649,10 @@ impl Gpu {
             None => Uniform::new(&self.device, &self.uniform_layout),
         };
 
-        println!(
-            "ring {} {} {}",
-            self.uniform_ring[0].len(),
-            self.uniform_ring[1].len(),
-            self.uniform_ring[2].len()
-        );
-
         // Write the uniform to its wgpu buffer
         let color = match color {
             Some(c) => c,
-            None => Vec4::new(1.0, 1.0, 1.0, 1.0),
+            None => Vec4::splat(1.0),
         };
         let aspect_ratio_transform =
             Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
@@ -687,7 +666,7 @@ impl Gpu {
 
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
-        render_pass.set_vertex_buffer(2, mesh.vert_colors.slice(..));
+        render_pass.set_vertex_buffer(2, mesh.colors.slice(..));
         render_pass.set_vertex_buffer(3, mesh.uvs.slice(..));
         render_pass.set_bind_group(0, &uniform.bindgroup, &[]);
 
