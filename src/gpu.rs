@@ -22,7 +22,7 @@ pub trait Gpu {
     fn create_mesh_with_color(&self, positions: &[Vec3], color: &Vec4) -> Mesh {
         self.create_mesh(positions, Some(&vec![*color; positions.len()]), None)
     }
-    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>);
+    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4);
 
     fn begin_frame(&mut self);
     fn set_render_features(&mut self, features: RenderFeatures);
@@ -79,8 +79,8 @@ struct Uniform {
 
 impl Uniform {
     fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
-        let size = size_of::<Mat4>() + size_of::<Vec4>();
-        debug_assert_eq!(size, 16 * 4 + 4 * 4);
+        let size = size_of::<Mat4>();
+        debug_assert_eq!(size, 16 * 4);
 
         let buffer = {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -101,15 +101,6 @@ impl Uniform {
         });
 
         Self { buffer, bindgroup }
-    }
-
-    fn as_bytes(matrix: &Mat4, color: &Vec4) -> Vec<u8> {
-        let m = bytemuck::bytes_of(matrix);
-        let c = bytemuck::bytes_of(color);
-        let mut combined = Vec::with_capacity(m.len() + c.len());
-        combined.extend_from_slice(m);
-        combined.extend_from_slice(c);
-        combined
     }
 }
 
@@ -342,23 +333,19 @@ impl Gpu for ImplGpu {
         self.render_pass.as_mut().unwrap().set_pipeline(&pipeline);
     }
 
-    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
+    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
         let uniform = match self.uniform_ring[self.uniform_ring_index].pop() {
             Some(m) => m,
             None => Uniform::new(&self.device, &self.uniform_layout),
         };
 
         // Write the uniform to its wgpu buffer
-        let color = match color {
-            Some(c) => c,
-            None => Vec4::splat(1.0),
-        };
         let aspect_ratio_transform =
             Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
         self.queue.write_buffer(
             &uniform.buffer,
             0,
-            &Uniform::as_bytes(&(aspect_ratio_transform * *matrix), &color),
+            bytemuck::bytes_of(&(aspect_ratio_transform * *matrix)),
         );
 
         let render_pass = self.render_pass.as_mut().unwrap();

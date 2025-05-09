@@ -211,13 +211,8 @@ impl Grid2d {
 
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
-                let color = match self.atoms[x][y] {
-                    Atom2d::Gas(v) => Vec4::new(v * 0.01, 0.0, 1.0 - v * 0.01, 1.0),
-                    Atom2d::Solid => Vec4::new(0.0, 1.0, 0.0, 1.0),
-                    Atom2d::Liquid => Vec4::new(0.0, 1.0, 1.0, 1.0),
-                };
                 let m = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0));
-                gpu.render_mesh(&mesh, &(self.transform * m), Some(color));
+                gpu.render_mesh(&mesh, &(self.transform * m));
             }
         }
     }

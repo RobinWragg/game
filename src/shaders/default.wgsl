@@ -16,7 +16,6 @@ struct VertToFrag {
 
 struct Uniform {
     matrix: mat4x4<f32>,
-    color: vec4<f32>,
 }
 @group(0) @binding(0)
 var<uniform> uniform: Uniform;
@@ -54,7 +53,7 @@ var texture_sampler: sampler;
 fn fs_main(in: VertToFrag) -> @location(0) vec4<f32> {
     let tex_color = textureSample(texture_view, texture_sampler, in.uv);
 
-    let pre_light_color = tex_color * in.color * srgb_to_linear(uniform.color);
+    let pre_light_color = tex_color * in.color;
 
     if LIGHTING_ENABLED {
         let light = dot(in.normal, normalize(vec3<f32>(0.5, -1.0, 0.2))) / 2.0 + 0.5;

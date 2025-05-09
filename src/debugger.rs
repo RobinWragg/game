@@ -236,7 +236,7 @@ impl Debugger {
                 Some(&vert_colors),
                 Some((gpu_tex_id, &vert_uvs)),
             );
-            gpu.render_mesh(&mesh, &self.matrix, None);
+            gpu.render_mesh(&mesh, &self.matrix);
         }
     }
 }
