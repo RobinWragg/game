@@ -44,7 +44,7 @@ impl Game {
         }
     }
 
-    pub fn update_and_render(&mut self, gpu: &mut Gpu) {
+    pub fn update_and_render(&mut self, gpu: &mut dyn Gpu) {
         gpu.begin_frame();
 
         let frame_start_time = Instant::now();

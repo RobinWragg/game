@@ -8,6 +8,45 @@ use std::sync::Arc;
 use wgpu;
 use winit::window::Window;
 
+pub trait Gpu {
+    // TODO: combine these
+    fn create_texture(&mut self, width: usize, height: usize, linear_filtering: bool) -> usize;
+    fn write_rgba_texture(&self, texture_id: usize, pixel_bytes: &[u8]);
+
+    fn create_mesh(
+        &self,
+        positions: &[Vec3],
+        colors: Option<&[Vec4]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
+    ) -> Mesh;
+    fn create_mesh_with_color(&self, positions: &[Vec3], color: &Vec4) -> Mesh {
+        self.create_mesh(positions, Some(&vec![*color; positions.len()]), None)
+    }
+    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>);
+
+    fn begin_frame(&mut self);
+    fn set_render_features(&mut self, features: RenderFeatures);
+    fn finish_frame(&mut self);
+
+    fn width(&self) -> u32;
+    fn height(&self) -> u32;
+
+    fn aspect_ratio(&self) -> f32 {
+        self.width() as f32 / self.height() as f32
+    }
+
+    fn window_to_normalized_transform(&self) -> Mat4 {
+        let h = self.height() as f32;
+        let pixels_to_normalized = Mat4::from_scale(Vec3::new(2.0 / h, -2.0 / h, 1.0));
+        let translation = Mat4::from_translation(Vec3::new(-self.aspect_ratio(), 1.0, 0.0));
+        translation * pixels_to_normalized
+    }
+
+    fn window_to_normalized(&self, window_pos: &Vec2) -> Vec2 {
+        transform_2d(&window_pos, &self.window_to_normalized_transform())
+    }
+}
+
 bitflags! {
     pub struct RenderFeatures: usize {
         const DEPTH = 0b0001;
@@ -74,7 +113,7 @@ impl Uniform {
     }
 }
 
-pub struct Gpu {
+pub struct ImplGpu {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -88,34 +127,263 @@ pub struct Gpu {
     command_encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
     uniform_ring: Vec<Vec<Uniform>>,
-    width: usize,
-    height: usize,
+    width: u32,
+    height: u32,
 }
 
-impl Gpu {
-    pub fn width(&self) -> usize {
+impl Gpu for ImplGpu {
+    fn width(&self) -> u32 {
         self.width
     }
 
-    pub fn height(&self) -> usize {
+    fn height(&self) -> u32 {
         self.height
     }
 
-    pub fn aspect_ratio(&self) -> f32 {
-        self.width() as f32 / self.height() as f32
+    fn create_mesh(
+        &self,
+        positions: &[Vec3],
+        colors: Option<&[Vec4]>,
+        texture_id_and_uvs: Option<(usize, &[Vec2])>,
+    ) -> Mesh {
+        let v_count = positions.len();
+
+        let pos_buf = self.create_vertex_buffer(v_count * size_of::<Vec3>());
+        self.queue
+            .write_buffer(&pos_buf, 0, bytemuck::cast_slice(positions));
+
+        // Default normals for each triangle
+        let normal_buf = self.create_vertex_buffer(v_count * size_of::<Vec3>());
+        let mut normals = vec![Vec3::ZERO; v_count];
+        for i in (0..v_count).step_by(3) {
+            let v0 = positions[i];
+            let v1 = positions[i + 1];
+            let v2 = positions[i + 2];
+            let normal = (v1 - v0).cross(v2 - v0).normalize();
+
+            normals[i] = normal;
+            normals[i + 1] = normal;
+            normals[i + 2] = normal;
+        }
+        self.queue
+            .write_buffer(&normal_buf, 0, bytemuck::cast_slice(&normals));
+
+        let color_buf = self.create_vertex_buffer(v_count * size_of::<Vec4>());
+        if let Some(colors) = colors {
+            debug_assert_eq!(colors.len(), v_count);
+            self.queue
+                .write_buffer(&color_buf, 0, bytemuck::cast_slice(colors));
+        } else {
+            // Disable vertex colors by just multiplying the texture with white in the shader.
+            let whites = vec![Vec4::splat(1.0); positions.len()];
+            self.queue
+                .write_buffer(&color_buf, 0, bytemuck::cast_slice(&whites));
+        }
+
+        let uv_buf = self.create_vertex_buffer(v_count * size_of::<Vec2>());
+        let tex_id = if let Some((id, uvs)) = texture_id_and_uvs {
+            debug_assert_eq!(uvs.len(), v_count);
+            self.queue
+                .write_buffer(&uv_buf, 0, bytemuck::cast_slice(uvs));
+            id
+        } else {
+            WHITE_TEXTURE_ID
+        };
+
+        Mesh {
+            vert_count: v_count,
+            positions: pos_buf,
+            normals: normal_buf,
+            colors: color_buf,
+            uvs: uv_buf,
+            texture: tex_id,
+        }
     }
 
-    pub fn window_to_normalized_transform(&self) -> Mat4 {
-        let height = self.height() as f32;
-        let pixels_to_normalized = Mat4::from_scale(Vec3::new(2.0 / height, -2.0 / height, 1.0));
-        let translation = Mat4::from_translation(Vec3::new(-self.aspect_ratio(), 1.0, 0.0));
-        translation * pixels_to_normalized
+    fn create_texture(&mut self, width: usize, height: usize, linear_filtering: bool) -> usize {
+        let size = wgpu::Extent3d {
+            width: width as u32,
+            height: height as u32,
+            depth_or_array_layers: 1,
+        };
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: None,
+            view_formats: &[],
+        });
+        let filter = if linear_filtering {
+            wgpu::FilterMode::Linear
+        } else {
+            wgpu::FilterMode::Nearest
+        };
+        let bindgroup = {
+            let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: filter,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.texture_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+                label: Some("default gb texture bind group"),
+            })
+        };
+
+        self.textures.push(Texture {
+            texture,
+            size,
+            bindgroup,
+        });
+        self.textures.len() - 1
     }
 
-    pub fn window_to_normalized(&self, window_pos: &Vec2) -> Vec2 {
-        transform_2d(&window_pos, &self.window_to_normalized_transform())
+    fn write_rgba_texture(&self, texture_id: usize, pixel_bytes: &[u8]) {
+        let texture = &self.textures[texture_id];
+        debug_assert_eq!(
+            pixel_bytes.len(),
+            (texture.size.width * texture.size.height * 4) as usize,
+            "expected entire 8bit RGBA pixel data"
+        );
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixel_bytes,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(texture.size.width * 4),
+                rows_per_image: Some(texture.size.height),
+            },
+            texture.size,
+        );
     }
 
+    fn begin_frame(&mut self) {
+        let surface_texture = self.surface.get_current_texture().unwrap();
+
+        let mut command_encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        let view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut render_pass = command_encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            })
+            .forget_lifetime();
+
+        // todo is it necessary to set the pipeline here?
+        render_pass.set_pipeline(&self.pipelines[0]);
+
+        self.surface_texture = Some(surface_texture);
+        self.command_encoder = Some(command_encoder);
+        self.render_pass = Some(render_pass);
+    }
+
+    fn finish_frame(&mut self) {
+        self.render_pass = None; // Finish the render pass
+
+        let finished_command_buffer = take(&mut self.command_encoder).unwrap().finish();
+        self.queue.submit(std::iter::once(finished_command_buffer));
+
+        self.uniform_ring_index += 1;
+        while self.uniform_ring_index >= MAX_SWAPCHAIN_SIZE {
+            self.uniform_ring_index -= MAX_SWAPCHAIN_SIZE;
+        }
+
+        take(&mut self.surface_texture).unwrap().present();
+    }
+
+    fn set_render_features(&mut self, features: RenderFeatures) {
+        let pipeline = &self.pipelines[features.bits()];
+        self.render_pass.as_mut().unwrap().set_pipeline(&pipeline);
+    }
+
+    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
+        let uniform = match self.uniform_ring[self.uniform_ring_index].pop() {
+            Some(m) => m,
+            None => Uniform::new(&self.device, &self.uniform_layout),
+        };
+
+        // Write the uniform to its wgpu buffer
+        let color = match color {
+            Some(c) => c,
+            None => Vec4::splat(1.0),
+        };
+        let aspect_ratio_transform =
+            Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
+        self.queue.write_buffer(
+            &uniform.buffer,
+            0,
+            &Uniform::as_bytes(&(aspect_ratio_transform * *matrix), &color),
+        );
+
+        let render_pass = self.render_pass.as_mut().unwrap();
+
+        render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
+        render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
+        render_pass.set_vertex_buffer(2, mesh.colors.slice(..));
+        render_pass.set_vertex_buffer(3, mesh.uvs.slice(..));
+        render_pass.set_bind_group(0, &uniform.bindgroup, &[]);
+
+        let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
+        render_pass.set_bind_group(1, texture_bindgroup, &[]);
+
+        render_pass.draw(0..mesh.vert_count as u32, 0..1);
+
+        let mut end_of_ring = self.uniform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
+        while end_of_ring >= MAX_SWAPCHAIN_SIZE {
+            end_of_ring -= MAX_SWAPCHAIN_SIZE;
+        }
+
+        self.uniform_ring[end_of_ring].push(uniform);
+    }
+}
+
+impl ImplGpu {
     pub fn normalized_to_window(&self, normalized_pos: &Vec2) -> Vec2 {
         transform_2d(
             &normalized_pos,
@@ -260,8 +528,8 @@ impl Gpu {
         let uniform_ring = (0..MAX_SWAPCHAIN_SIZE).map(|_| Vec::new()).collect();
 
         let mut gpu = Self {
-            width: window.inner_size().width as usize,
-            height: window.inner_size().height as usize,
+            width: window.inner_size().width,
+            height: window.inner_size().height,
             surface,
             device,
             queue,
@@ -397,66 +665,6 @@ impl Gpu {
         })
     }
 
-    pub fn create_mesh(
-        &self,
-        positions: &[Vec3],
-        colors: Option<&[Vec4]>,
-        texture_id_and_uvs: Option<(usize, &[Vec2])>,
-    ) -> Mesh {
-        let v_count = positions.len();
-
-        let pos_buf = self.create_vertex_buffer(v_count * size_of::<Vec3>());
-        self.queue
-            .write_buffer(&pos_buf, 0, bytemuck::cast_slice(positions));
-
-        // Default normals for each triangle
-        let normal_buf = self.create_vertex_buffer(v_count * size_of::<Vec3>());
-        let mut normals = vec![Vec3::ZERO; v_count];
-        for i in (0..v_count).step_by(3) {
-            let v0 = positions[i];
-            let v1 = positions[i + 1];
-            let v2 = positions[i + 2];
-            let normal = (v1 - v0).cross(v2 - v0).normalize();
-
-            normals[i] = normal;
-            normals[i + 1] = normal;
-            normals[i + 2] = normal;
-        }
-        self.queue
-            .write_buffer(&normal_buf, 0, bytemuck::cast_slice(&normals));
-
-        let color_buf = self.create_vertex_buffer(v_count * size_of::<Vec4>());
-        if let Some(colors) = colors {
-            debug_assert_eq!(colors.len(), v_count);
-            self.queue
-                .write_buffer(&color_buf, 0, bytemuck::cast_slice(colors));
-        } else {
-            // Disable vertex colors by just multiplying the texture with white in the shader.
-            let whites = vec![Vec4::splat(1.0); positions.len()];
-            self.queue
-                .write_buffer(&color_buf, 0, bytemuck::cast_slice(&whites));
-        }
-
-        let uv_buf = self.create_vertex_buffer(v_count * size_of::<Vec2>());
-        let tex_id = if let Some((id, uvs)) = texture_id_and_uvs {
-            debug_assert_eq!(uvs.len(), v_count);
-            self.queue
-                .write_buffer(&uv_buf, 0, bytemuck::cast_slice(uvs));
-            id
-        } else {
-            WHITE_TEXTURE_ID
-        };
-
-        Mesh {
-            vert_count: v_count,
-            positions: pos_buf,
-            normals: normal_buf,
-            colors: color_buf,
-            uvs: uv_buf,
-            texture: tex_id,
-        }
-    }
-
     fn create_vertex_buffer(&self, num_bytes: usize) -> wgpu::Buffer {
         self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -464,62 +672,6 @@ impl Gpu {
             size: num_bytes as u64,
             mapped_at_creation: false,
         })
-    }
-
-    pub fn create_texture(&mut self, width: usize, height: usize, linear_filtering: bool) -> usize {
-        let size = wgpu::Extent3d {
-            width: width as u32,
-            height: height as u32,
-            depth_or_array_layers: 1,
-        };
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: None,
-            view_formats: &[],
-        });
-        let filter = if linear_filtering {
-            wgpu::FilterMode::Linear
-        } else {
-            wgpu::FilterMode::Nearest
-        };
-        let bindgroup = {
-            let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                address_mode_w: wgpu::AddressMode::ClampToEdge,
-                mag_filter: filter,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                ..Default::default()
-            });
-            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.texture_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-                label: Some("default gb texture bind group"),
-            })
-        };
-
-        self.textures.push(Texture {
-            texture,
-            size,
-            bindgroup,
-        });
-        self.textures.len() - 1
     }
 
     pub fn write_monochrome_texture(&self, texture_id: usize, pixels: &[u8]) {
@@ -539,131 +691,5 @@ impl Gpu {
         }
 
         self.write_rgba_texture(texture_id, &rgba_pixel_bytes);
-    }
-
-    pub fn write_rgba_texture(&self, texture_id: usize, pixel_bytes: &[u8]) {
-        let texture = &self.textures[texture_id];
-        debug_assert_eq!(
-            pixel_bytes.len(),
-            (texture.size.width * texture.size.height * 4) as usize,
-            "expected entire 8bit RGBA pixel data"
-        );
-        self.queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &texture.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            pixel_bytes,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(texture.size.width * 4),
-                rows_per_image: Some(texture.size.height),
-            },
-            texture.size,
-        );
-    }
-
-    pub fn set_render_features(&mut self, features: RenderFeatures) {
-        let pipeline = &self.pipelines[features.bits()];
-        self.render_pass.as_mut().unwrap().set_pipeline(&pipeline);
-    }
-
-    pub fn begin_frame(&mut self) {
-        let surface_texture = self.surface.get_current_texture().unwrap();
-
-        let mut command_encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut render_pass = command_encoder
-            .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            })
-            .forget_lifetime();
-
-        // todo is it necessary to set the pipeline here?
-        render_pass.set_pipeline(&self.pipelines[0]);
-
-        self.surface_texture = Some(surface_texture);
-        self.command_encoder = Some(command_encoder);
-        self.render_pass = Some(render_pass);
-    }
-
-    pub fn finish_frame(&mut self) {
-        self.render_pass = None; // Finish the render pass
-
-        let finished_command_buffer = take(&mut self.command_encoder).unwrap().finish();
-        self.queue.submit(std::iter::once(finished_command_buffer));
-
-        self.uniform_ring_index += 1;
-        while self.uniform_ring_index >= MAX_SWAPCHAIN_SIZE {
-            self.uniform_ring_index -= MAX_SWAPCHAIN_SIZE;
-        }
-
-        take(&mut self.surface_texture).unwrap().present();
-    }
-
-    pub fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4, color: Option<Vec4>) {
-        let uniform = match self.uniform_ring[self.uniform_ring_index].pop() {
-            Some(m) => m,
-            None => Uniform::new(&self.device, &self.uniform_layout),
-        };
-
-        // Write the uniform to its wgpu buffer
-        let color = match color {
-            Some(c) => c,
-            None => Vec4::splat(1.0),
-        };
-        let aspect_ratio_transform =
-            Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
-        self.queue.write_buffer(
-            &uniform.buffer,
-            0,
-            &Uniform::as_bytes(&(aspect_ratio_transform * *matrix), &color),
-        );
-
-        let render_pass = self.render_pass.as_mut().unwrap();
-
-        render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
-        render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
-        render_pass.set_vertex_buffer(2, mesh.colors.slice(..));
-        render_pass.set_vertex_buffer(3, mesh.uvs.slice(..));
-        render_pass.set_bind_group(0, &uniform.bindgroup, &[]);
-
-        let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
-        render_pass.set_bind_group(1, texture_bindgroup, &[]);
-
-        render_pass.draw(0..mesh.vert_count as u32, 0..1);
-
-        let mut end_of_ring = self.uniform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
-        while end_of_ring >= MAX_SWAPCHAIN_SIZE {
-            end_of_ring -= MAX_SWAPCHAIN_SIZE;
-        }
-
-        self.uniform_ring[end_of_ring].push(uniform);
     }
 }

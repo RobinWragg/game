@@ -9,6 +9,7 @@ mod math;
 mod prelude;
 
 use game::Game;
+use gpu::ImplGpu;
 use prelude::*;
 use std::sync::Arc;
 use winit::{
@@ -25,7 +26,7 @@ const WINDOW_HEIGHT: u32 = 760;
 
 struct App {
     window: Option<Arc<Window>>,
-    gpu: Option<Gpu>,
+    gpu: Option<Box<dyn Gpu>>,
     game: Option<Game>,
     mouse_pos: Vec2,
 }
@@ -52,7 +53,8 @@ impl ApplicationHandler for App {
                 .unwrap(),
         );
 
-        self.gpu = Some(Gpu::new(&window));
+        let impl_gpu = ImplGpu::new(&window);
+        self.gpu = Some(Box::new(impl_gpu));
         self.window = Some(window.clone());
         self.game = Some(Game::new());
     }
@@ -62,7 +64,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let gpu = self.gpu.as_mut().unwrap();
+        let gpu = &mut **self.gpu.as_mut().unwrap();
         let game = self.game.as_mut().unwrap();
         match event {
             WindowEvent::CursorMoved {

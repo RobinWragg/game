@@ -546,7 +546,7 @@ impl Editor {
         }
     }
 
-    pub fn render_ortho(&self, grid: &Grid, gpu: &mut Gpu) {
+    pub fn render_ortho(&self, grid: &Grid, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT);
 
         let mesh = gpu.create_mesh(&cube_triangles(), None, None);
@@ -598,7 +598,7 @@ impl Viewer {
         Self {}
     }
 
-    pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut Gpu) {
+    pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH);
 
         let verts = [

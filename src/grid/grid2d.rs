@@ -195,7 +195,7 @@ impl Grid2d {
         }
     }
 
-    fn render_2d(&self, gpu: &mut Gpu) {
+    fn render_2d(&self, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH);
 
         let verts = vec![
