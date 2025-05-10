@@ -420,16 +420,29 @@ pub struct Editor {
     mouse_pos: Option<Vec2>,
     highlighted_atom: Option<UVec3>,
     proposed_atom: Option<UVec3>,
+    solid_mesh: Mesh,
+    gas_mesh: Mesh,
+    gas_source_mesh: Mesh,
+    proposal_mesh: Mesh,
+    deletion_mesh: Mesh,
 }
 
 impl Editor {
-    pub fn new() -> Self {
+    pub fn new(gpu: &dyn Gpu) -> Self {
         Self {
             camera_transform: Mat4::IDENTITY,
             rotation: Vec2::splat(PI / -8.0),
             mouse_pos: None,
             highlighted_atom: None,
             proposed_atom: None,
+            solid_mesh: gpu
+                .create_mesh_with_color(&cube_triangles(), &Vec4::new(0.5, 0.5, 0.5, 1.0)),
+            gas_mesh: gpu.create_mesh_with_color(&cube_triangles(), &Vec4::new(1.0, 0.0, 1.0, 1.0)),
+            gas_source_mesh: gpu.create_mesh_with_color(&cube_triangles(), &Vec4::splat(1.0)),
+            proposal_mesh: gpu
+                .create_mesh_with_color(&cube_triangles(), &Vec4::new(0.0, 1.0, 0.0, 1.0)),
+            deletion_mesh: gpu
+                .create_mesh_with_color(&cube_triangles(), &Vec4::new(1.0, 0.0, 0.0, 1.0)),
         }
     }
 
@@ -549,8 +562,6 @@ impl Editor {
     pub fn render_ortho(&self, grid: &Grid, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT);
 
-        let mesh = gpu.create_mesh(&cube_triangles(), None, None);
-
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let half_trans_inv = half_trans.inverse();
 
@@ -573,20 +584,24 @@ impl Editor {
             let model_transform = Mat4::from_translation(pos.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
 
-            let color = if self.highlighted_atom == Some(pos) {
-                Some(Vec4::new(1.0, 0.5, 0.5, 1.0))
+            let mesh = if self.highlighted_atom == Some(pos) {
+                &self.deletion_mesh
             } else {
-                Some(atom_color(atom))
+                match atom {
+                    Solid(_) => &self.solid_mesh,
+                    Gas(_) => &self.gas_mesh,
+                    GasSource(_) => &self.gas_source_mesh,
+                }
             };
 
-            gpu.render_mesh(&mesh, &total_transform, color);
+            gpu.render_mesh(mesh, &total_transform);
         }
 
         if let Some(proposed_atom) = self.proposed_atom {
             let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.5)) * half_trans_inv;
             let model_transform = Mat4::from_translation(proposed_atom.as_vec3()) * shrink;
             let total_transform = self.camera_transform * model_transform;
-            gpu.render_mesh(&mesh, &total_transform, Some(Vec4::new(0.5, 1.0, 0.5, 1.0)));
+            gpu.render_mesh(&self.proposal_mesh, &total_transform);
         }
     }
 }

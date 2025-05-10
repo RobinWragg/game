@@ -56,7 +56,7 @@ impl ApplicationHandler for App {
         let impl_gpu = ImplGpu::new(&window);
         self.gpu = Some(Box::new(impl_gpu));
         self.window = Some(window.clone());
-        self.game = Some(Game::new());
+        self.game = Some(Game::new(&**self.gpu.as_ref().unwrap()));
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {

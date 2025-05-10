@@ -13,14 +13,14 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new() -> Game {
+    pub fn new(gpu: &dyn Gpu) -> Game {
         let mut grid = Grid::from_file();
         Self {
             debugger: Debugger::default(),
             launch_time: Instant::now(),
             prev_frame_start_time: Instant::now(),
             grid,
-            grid_editor: Editor::new(),
+            grid_editor: Editor::new(gpu),
             grid_viewer: Viewer::new(),
             events_for_next_frame: VecDeque::new(),
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),

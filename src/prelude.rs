@@ -1,5 +1,5 @@
 pub use crate::debugger::Debugger;
-pub use crate::gpu::{Gpu, RenderFeatures};
+pub use crate::gpu::{Gpu, Mesh, RenderFeatures};
 use crate::grid::Atom;
 pub use glam::{
     f32::{Mat3, Mat4, Vec2, Vec3, Vec4},
