@@ -21,7 +21,7 @@ impl Game {
             prev_frame_start_time: Instant::now(),
             grid,
             grid_editor: Editor::new(gpu),
-            grid_viewer: Viewer::new(),
+            grid_viewer: Viewer::new(gpu),
             events_for_next_frame: VecDeque::new(),
             previous_mouse_pos_for_deduplication: Vec2::new(0.0, 0.0),
         }

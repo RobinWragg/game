@@ -606,16 +606,12 @@ impl Editor {
     }
 }
 
-pub struct Viewer {}
+pub struct Viewer {
+    mesh: Mesh,
+}
 
 impl Viewer {
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut dyn Gpu) {
-        gpu.set_render_features(RenderFeatures::DEPTH);
-
+    pub fn new(gpu: &dyn Gpu) -> Self {
         let verts = [
             // front
             Vec3::new(0.0, 0.0, 0.0),
@@ -652,6 +648,13 @@ impl Viewer {
         ];
 
         let mesh = gpu.create_mesh(&verts, Some(&intensities), None);
+
+        Self { mesh }
+    }
+
+    pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut dyn Gpu) {
+        gpu.set_render_features(RenderFeatures::DEPTH);
+
         let camera_transform = Mat4::from_translation(global_translation.extend(0.5))
             * Mat4::from_scale(Vec3::splat(0.005));
 
@@ -669,11 +672,7 @@ impl Viewer {
 
             let isometric_pos = isometric_transform_cpu * pos.as_vec3(); // Maybe add 0.5?
             let model_transform = Mat4::from_translation(isometric_pos);
-            gpu.render_mesh(
-                &mesh,
-                &(camera_transform * model_transform),
-                Some(atom_color(atom)),
-            );
+            gpu.render_mesh(&self.mesh, &(camera_transform * model_transform));
         }
     }
 }
