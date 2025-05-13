@@ -3,7 +3,7 @@ use crate::prelude::*;
 use bitflags::bitflags;
 use bytemuck;
 use pollster;
-use std::mem::{size_of, swap, take};
+use std::mem::size_of;
 use std::sync::Arc;
 use wgpu;
 use winit::window::Window;
@@ -25,6 +25,7 @@ pub trait Gpu {
     fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4);
 
     fn begin_frame(&mut self);
+    fn set_camera(&mut self);
     fn set_render_features(&mut self, features: RenderFeatures);
     fn finish_frame(&mut self);
 
@@ -110,14 +111,15 @@ pub struct ImplGpu {
     queue: wgpu::Queue,
     pipelines: [wgpu::RenderPipeline; 4],
     depth_texture_view: wgpu::TextureView,
-    uniform_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
+    uniform_layout: wgpu::BindGroupLayout,
+    uniform_ring: Vec<Vec<Uniform>>,
     uniform_ring_index: usize,
+    camera_uniform: Option<Uniform>,
     surface_texture: Option<wgpu::SurfaceTexture>,
     command_encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
-    uniform_ring: Vec<Vec<Uniform>>,
     width: u32,
     height: u32,
 }
@@ -306,9 +308,6 @@ impl Gpu for ImplGpu {
             })
             .forget_lifetime();
 
-        // todo is it necessary to set the pipeline here?
-        render_pass.set_pipeline(&self.pipelines[0]);
-
         self.surface_texture = Some(surface_texture);
         self.command_encoder = Some(command_encoder);
         self.render_pass = Some(render_pass);
@@ -317,7 +316,7 @@ impl Gpu for ImplGpu {
     fn finish_frame(&mut self) {
         self.render_pass = None; // Finish the render pass
 
-        let finished_command_buffer = take(&mut self.command_encoder).unwrap().finish();
+        let finished_command_buffer = self.command_encoder.take().unwrap().finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
 
         self.uniform_ring_index += 1;
@@ -325,7 +324,7 @@ impl Gpu for ImplGpu {
             self.uniform_ring_index -= MAX_SWAPCHAIN_SIZE;
         }
 
-        take(&mut self.surface_texture).unwrap().present();
+        self.surface_texture.take().unwrap().present();
     }
 
     fn set_render_features(&mut self, features: RenderFeatures) {
@@ -334,19 +333,7 @@ impl Gpu for ImplGpu {
     }
 
     fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
-        let uniform = match self.uniform_ring[self.uniform_ring_index].pop() {
-            Some(m) => m,
-            None => Uniform::new(&self.device, &self.uniform_layout),
-        };
-
-        // Write the uniform to its wgpu buffer
-        let aspect_ratio_transform =
-            Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
-        self.queue.write_buffer(
-            &uniform.buffer,
-            0,
-            bytemuck::bytes_of(&(aspect_ratio_transform * *matrix)),
-        );
+        let model_uniform = self.pop_and_write_uniform(matrix);
 
         let render_pass = self.render_pass.as_mut().unwrap();
 
@@ -354,30 +341,30 @@ impl Gpu for ImplGpu {
         render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
         render_pass.set_vertex_buffer(2, mesh.colors.slice(..));
         render_pass.set_vertex_buffer(3, mesh.uvs.slice(..));
-        render_pass.set_bind_group(0, &uniform.bindgroup, &[]);
+        render_pass.set_bind_group(0, &self.camera_uniform.as_ref().unwrap().bindgroup, &[]);
+        render_pass.set_bind_group(1, &model_uniform.bindgroup, &[]);
 
         let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
-        render_pass.set_bind_group(1, texture_bindgroup, &[]);
+        render_pass.set_bind_group(2, texture_bindgroup, &[]);
 
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
 
-        let mut end_of_ring = self.uniform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
-        while end_of_ring >= MAX_SWAPCHAIN_SIZE {
-            end_of_ring -= MAX_SWAPCHAIN_SIZE;
+        self.push_uniform(model_uniform);
+    }
+
+    fn set_camera(&mut self) {
+        if let Some(cu) = self.camera_uniform.take() {
+            self.push_uniform(cu);
         }
 
-        self.uniform_ring[end_of_ring].push(uniform);
+        let matrix = Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
+        let u = self.pop_and_write_uniform(&matrix);
+
+        self.camera_uniform = Some(u);
     }
 }
 
 impl ImplGpu {
-    pub fn normalized_to_window(&self, normalized_pos: &Vec2) -> Vec2 {
-        transform_2d(
-            &normalized_pos,
-            &self.window_to_normalized_transform().inverse(),
-        )
-    }
-
     pub fn new(window: &Arc<Window>) -> Self {
         let (surface, adapter) = {
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -490,7 +477,7 @@ impl ImplGpu {
                 pipelines.push(Self::create_pipeline(
                     &device,
                     &surface_config,
-                    &[&uniform_layout, &texture_layout],
+                    &[&uniform_layout, &uniform_layout, &texture_layout],
                     RenderFeatures::from_bits(flags).unwrap(),
                 ));
             }
@@ -522,14 +509,15 @@ impl ImplGpu {
             queue,
             pipelines,
             depth_texture_view: depth_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-            uniform_layout,
             texture_layout,
             textures: vec![],
-            uniform_ring_index: 0,
             surface_texture: None,
             command_encoder: None,
             render_pass: None,
+            uniform_layout,
             uniform_ring,
+            uniform_ring_index: 0,
+            camera_uniform: None,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -540,6 +528,27 @@ impl ImplGpu {
         debug_assert_eq!(white_texture, WHITE_TEXTURE_ID);
 
         gpu
+    }
+
+    fn pop_and_write_uniform(&mut self, matrix: &Mat4) -> Uniform {
+        let u = if let Some(u_from_ring) = self.uniform_ring[self.uniform_ring_index].pop() {
+            u_from_ring
+        } else {
+            Uniform::new(&self.device, &self.uniform_layout)
+        };
+
+        self.queue
+            .write_buffer(&u.buffer, 0, bytemuck::bytes_of(matrix));
+        u
+    }
+
+    fn push_uniform(&mut self, uniform: Uniform) {
+        let mut end_of_ring = self.uniform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
+        while end_of_ring >= MAX_SWAPCHAIN_SIZE {
+            end_of_ring -= MAX_SWAPCHAIN_SIZE;
+        }
+
+        self.uniform_ring[end_of_ring].push(uniform);
     }
 
     fn create_pipeline(

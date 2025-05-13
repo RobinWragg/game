@@ -17,26 +17,30 @@ struct VertToFrag {
 struct Uniform {
     matrix: mat4x4<f32>,
 }
+
 @group(0) @binding(0)
-var<uniform> uniform: Uniform;
+var<uniform> camera_uniform: Uniform;
+
+@group(1) @binding(0)
+var<uniform> model_uniform: Uniform;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFrag {
     var out: VertToFrag;
-    out.pos = uniform.matrix * vec4<f32>(vert.pos, 1.0);
-    out.normal = vert.normal;
+    out.pos = camera_uniform.matrix * model_uniform.matrix * vec4<f32>(vert.pos, 1.0);
+    out.normal = vert.normal; // TODO: transform using model_uniform
     out.color = srgb_to_linear(vert.color);
 
     // Warn about out of Z bounds.
     if out.pos.z < 0.0 {
-        out.color.x  = 1.0;
-        out.color.y  = 0.0;
-        out.color.z  = 0.0;
+        out.color.x = 1.0;
+        out.color.y = 0.0;
+        out.color.z = 0.0;
         out.pos.z = 0.001;
     } else if out.pos.z > 1.0 {
-        out.color.x  = 0.0;
-        out.color.y  = 0.0;
-        out.color.z  = 1.0;
+        out.color.x = 0.0;
+        out.color.y = 0.0;
+        out.color.z = 1.0;
         out.pos.z = 0.001;
     }
 
@@ -44,9 +48,9 @@ fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFra
     return out;
 }
 
-@group(1) @binding(0)
+@group(2) @binding(0)
 var texture_view: texture_2d<f32>;
-@group(1) @binding(1)
+@group(2) @binding(1)
 var texture_sampler: sampler;
 
 @fragment

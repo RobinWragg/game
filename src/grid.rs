@@ -561,6 +561,7 @@ impl Editor {
 
     pub fn render_ortho(&self, grid: &Grid, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT);
+        gpu.set_camera();
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let half_trans_inv = half_trans.inverse();
