@@ -25,7 +25,7 @@ pub trait Gpu {
     fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4);
 
     fn begin_frame(&mut self);
-    fn set_camera(&mut self);
+    fn set_camera(&mut self, matrix: &Mat4);
     fn set_render_features(&mut self, features: RenderFeatures);
     fn finish_frame(&mut self);
 
@@ -352,13 +352,13 @@ impl Gpu for ImplGpu {
         self.push_uniform(model_uniform);
     }
 
-    fn set_camera(&mut self) {
+    fn set_camera(&mut self, matrix: &Mat4) {
         if let Some(cu) = self.camera_uniform.take() {
             self.push_uniform(cu);
         }
 
-        let matrix = Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0));
-        let u = self.pop_and_write_uniform(&matrix);
+        let m = Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0)) * *matrix;
+        let u = self.pop_and_write_uniform(&m);
 
         self.camera_uniform = Some(u);
     }

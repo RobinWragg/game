@@ -153,6 +153,7 @@ impl Debugger {
     }
 
     pub fn render(&mut self, gpu: &mut dyn Gpu) {
+        gpu.set_camera(&Mat4::IDENTITY);
         gpu.set_render_features(RenderFeatures::empty());
 
         if !self.full_output.textures_delta.set.is_empty() {

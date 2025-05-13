@@ -197,6 +197,7 @@ impl Grid2d {
 
     fn render_2d(&self, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH);
+        gpu.set_camera(&Mat4::IDENTITY);
 
         let verts = vec![
             Vec3::new(0.0, 0.0, 0.0),

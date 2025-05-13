@@ -561,7 +561,7 @@ impl Editor {
 
     pub fn render_ortho(&self, grid: &Grid, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT);
-        gpu.set_camera();
+        gpu.set_camera(&self.camera_transform);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let half_trans_inv = half_trans.inverse();
@@ -583,7 +583,6 @@ impl Editor {
 
             let shrink = half_trans * Mat4::from_scale(Vec3::splat(atom_size)) * half_trans_inv;
             let model_transform = Mat4::from_translation(pos.as_vec3()) * shrink;
-            let total_transform = self.camera_transform * model_transform;
 
             let mesh = if self.highlighted_atom == Some(pos) {
                 &self.deletion_mesh
@@ -595,14 +594,13 @@ impl Editor {
                 }
             };
 
-            gpu.render_mesh(mesh, &total_transform);
+            gpu.render_mesh(mesh, &model_transform);
         }
 
         if let Some(proposed_atom) = self.proposed_atom {
             let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.5)) * half_trans_inv;
             let model_transform = Mat4::from_translation(proposed_atom.as_vec3()) * shrink;
-            let total_transform = self.camera_transform * model_transform;
-            gpu.render_mesh(&self.proposal_mesh, &total_transform);
+            gpu.render_mesh(&self.proposal_mesh, &model_transform);
         }
     }
 }
@@ -658,6 +656,7 @@ impl Viewer {
 
         let camera_transform = Mat4::from_translation(global_translation.extend(0.5))
             * Mat4::from_scale(Vec3::splat(0.005));
+        gpu.set_camera(&camera_transform);
 
         let xhat = Vec3::new(2.0, 1.0, 1.0);
         let yhat = Vec3::new(0.0, 3.0, -1.0); // TODO: could do 0,3,0 instead and handle the depth using the mesh.
@@ -673,7 +672,7 @@ impl Viewer {
 
             let isometric_pos = isometric_transform_cpu * pos.as_vec3(); // Maybe add 0.5?
             let model_transform = Mat4::from_translation(isometric_pos);
-            gpu.render_mesh(&self.mesh, &(camera_transform * model_transform));
+            gpu.render_mesh(&self.mesh, &model_transform);
         }
     }
 }
