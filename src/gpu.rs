@@ -22,11 +22,16 @@ pub trait Gpu {
     fn create_mesh_with_color(&self, positions: &[Vec3], color: &Vec4) -> Mesh {
         self.create_mesh(positions, Some(&vec![*color; positions.len()]), None)
     }
-    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4);
+
+    fn create_transform(&mut self, matrix: &Mat4) -> Transform;
+    fn release_transform(&mut self, transform: Transform);
 
     fn begin_frame(&mut self);
+
     fn set_camera(&mut self, matrix: &Mat4);
     fn set_render_features(&mut self, features: RenderFeatures);
+    fn render_mesh(&mut self, mesh: &Mesh, transform: &Transform);
+
     fn finish_frame(&mut self);
 
     fn width(&self) -> u32;
@@ -73,35 +78,14 @@ pub struct Mesh {
     texture: usize,
 }
 
-struct Uniform {
+pub struct Transform {
     buffer: wgpu::Buffer,
     bindgroup: wgpu::BindGroup,
 }
 
-impl Uniform {
-    fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
-        let size = size_of::<Mat4>();
-        debug_assert_eq!(size, 16 * 4);
-
-        let buffer = {
-            device.create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                size: size as u64,
-                mapped_at_creation: false,
-            })
-        };
-
-        let bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-            label: None,
-        });
-
-        Self { buffer, bindgroup }
+impl Drop for Transform {
+    fn drop(&mut self) {
+        // TODO: assert against dropping without releasing
     }
 }
 
@@ -113,10 +97,10 @@ pub struct ImplGpu {
     depth_texture_view: wgpu::TextureView,
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
-    uniform_layout: wgpu::BindGroupLayout,
-    uniform_ring: Vec<Vec<Uniform>>,
-    uniform_ring_index: usize,
-    camera_uniform: Option<Uniform>,
+    transform_layout: wgpu::BindGroupLayout,
+    transform_ring: Vec<Vec<Transform>>,
+    transform_ring_index: usize,
+    camera_transform: Option<Transform>,
     surface_texture: Option<wgpu::SurfaceTexture>,
     command_encoder: Option<wgpu::CommandEncoder>,
     render_pass: Option<wgpu::RenderPass<'static>>,
@@ -273,6 +257,45 @@ impl Gpu for ImplGpu {
         );
     }
 
+    fn create_transform(&mut self, matrix: &Mat4) -> Transform {
+        let t = if let Some(t_from_ring) = self.transform_ring[self.transform_ring_index].pop() {
+            t_from_ring
+        } else {
+            let buffer = {
+                self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: None,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    size: size_of::<Mat4>() as u64,
+                    mapped_at_creation: false,
+                })
+            };
+
+            let bindgroup = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.transform_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+                label: None,
+            });
+
+            Transform { buffer, bindgroup }
+        };
+
+        self.queue
+            .write_buffer(&t.buffer, 0, bytemuck::bytes_of(matrix));
+        t
+    }
+
+    fn release_transform(&mut self, transform: Transform) {
+        let mut end_of_ring = self.transform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
+        while end_of_ring >= MAX_SWAPCHAIN_SIZE {
+            end_of_ring -= MAX_SWAPCHAIN_SIZE;
+        }
+
+        self.transform_ring[end_of_ring].push(transform);
+    }
+
     fn begin_frame(&mut self) {
         let surface_texture = self.surface.get_current_texture().unwrap();
 
@@ -319,9 +342,9 @@ impl Gpu for ImplGpu {
         let finished_command_buffer = self.command_encoder.take().unwrap().finish();
         self.queue.submit(std::iter::once(finished_command_buffer));
 
-        self.uniform_ring_index += 1;
-        while self.uniform_ring_index >= MAX_SWAPCHAIN_SIZE {
-            self.uniform_ring_index -= MAX_SWAPCHAIN_SIZE;
+        self.transform_ring_index += 1;
+        while self.transform_ring_index >= MAX_SWAPCHAIN_SIZE {
+            self.transform_ring_index -= MAX_SWAPCHAIN_SIZE;
         }
 
         self.surface_texture.take().unwrap().present();
@@ -332,35 +355,31 @@ impl Gpu for ImplGpu {
         self.render_pass.as_mut().unwrap().set_pipeline(&pipeline);
     }
 
-    fn render_mesh(&mut self, mesh: &Mesh, matrix: &Mat4) {
-        let model_uniform = self.pop_and_write_uniform(matrix);
-
+    fn render_mesh(&mut self, mesh: &Mesh, transform: &Transform) {
         let render_pass = self.render_pass.as_mut().unwrap();
 
         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
         render_pass.set_vertex_buffer(1, mesh.normals.slice(..));
         render_pass.set_vertex_buffer(2, mesh.colors.slice(..));
         render_pass.set_vertex_buffer(3, mesh.uvs.slice(..));
-        render_pass.set_bind_group(0, &self.camera_uniform.as_ref().unwrap().bindgroup, &[]);
-        render_pass.set_bind_group(1, &model_uniform.bindgroup, &[]);
+        render_pass.set_bind_group(0, &self.camera_transform.as_ref().unwrap().bindgroup, &[]);
+        render_pass.set_bind_group(1, &transform.bindgroup, &[]);
 
         let texture_bindgroup = &self.textures[mesh.texture].bindgroup;
         render_pass.set_bind_group(2, texture_bindgroup, &[]);
 
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
-
-        self.push_uniform(model_uniform);
     }
 
     fn set_camera(&mut self, matrix: &Mat4) {
-        if let Some(cu) = self.camera_uniform.take() {
-            self.push_uniform(cu);
+        if let Some(cu) = self.camera_transform.take() {
+            self.release_transform(cu);
         }
 
         let m = Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0)) * *matrix;
-        let u = self.pop_and_write_uniform(&m);
+        let u = self.create_transform(&m);
 
-        self.camera_uniform = Some(u);
+        self.camera_transform = Some(u);
     }
 }
 
@@ -422,7 +441,7 @@ impl ImplGpu {
         debug_assert_eq!(surface_config.present_mode, wgpu::PresentMode::Fifo);
         surface.configure(&device, &surface_config);
 
-        let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let transform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
@@ -477,7 +496,7 @@ impl ImplGpu {
                 pipelines.push(Self::create_pipeline(
                     &device,
                     &surface_config,
-                    &[&uniform_layout, &uniform_layout, &texture_layout],
+                    &[&transform_layout, &transform_layout, &texture_layout],
                     RenderFeatures::from_bits(flags).unwrap(),
                 ));
             }
@@ -499,7 +518,7 @@ impl ImplGpu {
             view_formats: &[],
         });
 
-        let uniform_ring = (0..MAX_SWAPCHAIN_SIZE).map(|_| Vec::new()).collect();
+        let transform_ring = (0..MAX_SWAPCHAIN_SIZE).map(|_| Vec::new()).collect();
 
         let mut gpu = Self {
             width: window.inner_size().width,
@@ -514,10 +533,10 @@ impl ImplGpu {
             surface_texture: None,
             command_encoder: None,
             render_pass: None,
-            uniform_layout,
-            uniform_ring,
-            uniform_ring_index: 0,
-            camera_uniform: None,
+            transform_layout,
+            transform_ring,
+            transform_ring_index: 0,
+            camera_transform: None,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -528,27 +547,6 @@ impl ImplGpu {
         debug_assert_eq!(white_texture, WHITE_TEXTURE_ID);
 
         gpu
-    }
-
-    fn pop_and_write_uniform(&mut self, matrix: &Mat4) -> Uniform {
-        let u = if let Some(u_from_ring) = self.uniform_ring[self.uniform_ring_index].pop() {
-            u_from_ring
-        } else {
-            Uniform::new(&self.device, &self.uniform_layout)
-        };
-
-        self.queue
-            .write_buffer(&u.buffer, 0, bytemuck::bytes_of(matrix));
-        u
-    }
-
-    fn push_uniform(&mut self, uniform: Uniform) {
-        let mut end_of_ring = self.uniform_ring_index + MAX_SWAPCHAIN_SIZE - 1;
-        while end_of_ring >= MAX_SWAPCHAIN_SIZE {
-            end_of_ring -= MAX_SWAPCHAIN_SIZE;
-        }
-
-        self.uniform_ring[end_of_ring].push(uniform);
     }
 
     fn create_pipeline(

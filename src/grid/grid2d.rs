@@ -213,7 +213,7 @@ impl Grid2d {
         for x in 0..GRID_SIZE {
             for y in 0..GRID_SIZE {
                 let m = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0));
-                gpu.render_mesh(&mesh, &(self.transform * m));
+                // gpu.render_mesh(&mesh, &(self.transform * m));
             }
         }
     }
