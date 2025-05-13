@@ -594,18 +594,18 @@ impl Editor {
                 }
             };
 
-            let t = gpu.create_transform(&model_transform);
-            gpu.render_mesh(mesh, &t);
-            gpu.release_transform(t);
+            let u = gpu.create_uniform(&model_transform);
+            gpu.render_mesh(mesh, &u);
+            gpu.release_uniform(u);
         }
 
         if let Some(proposed_atom) = self.proposed_atom {
             let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.5)) * half_trans_inv;
             let model_transform = Mat4::from_translation(proposed_atom.as_vec3()) * shrink;
 
-            let t = gpu.create_transform(&model_transform);
+            let t = gpu.create_uniform(&model_transform);
             gpu.render_mesh(&self.proposal_mesh, &t);
-            gpu.release_transform(t);
+            gpu.release_uniform(t);
         }
     }
 }
@@ -678,9 +678,9 @@ impl Viewer {
             let isometric_pos = isometric_transform_cpu * pos.as_vec3(); // Maybe add 0.5?
             let model_transform = Mat4::from_translation(isometric_pos);
 
-            let t = gpu.create_transform(&model_transform);
+            let t = gpu.create_uniform(&model_transform);
             gpu.render_mesh(&self.mesh, &t);
-            gpu.release_transform(t);
+            gpu.release_uniform(t);
         }
     }
 }

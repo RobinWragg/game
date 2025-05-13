@@ -190,7 +190,7 @@ impl Debugger {
         assert!(self.full_output.textures_delta.free.is_empty());
 
         let shapes = std::mem::take(&mut self.full_output.shapes);
-        let transform = gpu.create_transform(&self.matrix);
+        let uniform = gpu.create_uniform(&self.matrix);
         for prim in self
             .ctx
             .tessellate(shapes, self.full_output.pixels_per_point)
@@ -238,9 +238,9 @@ impl Debugger {
                 Some(&vert_colors),
                 Some((gpu_tex_id, &vert_uvs)),
             );
-            gpu.render_mesh(&mesh, &transform);
+            gpu.render_mesh(&mesh, &uniform);
         }
 
-        gpu.release_transform(transform);
+        gpu.release_uniform(uniform);
     }
 }
