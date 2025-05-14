@@ -425,6 +425,7 @@ pub struct Editor {
     gas_source_mesh: Mesh,
     proposal_mesh: Mesh,
     deletion_mesh: Mesh,
+    uniforms: Vec<Vec<Vec<Uniform>>>,
 }
 
 impl Editor {
@@ -443,6 +444,7 @@ impl Editor {
                 .create_mesh_with_color(&cube_triangles(), &Vec4::new(0.0, 1.0, 0.0, 1.0)),
             deletion_mesh: gpu
                 .create_mesh_with_color(&cube_triangles(), &Vec4::new(1.0, 0.0, 0.0, 1.0)),
+            uniforms: vec![],
         }
     }
 
@@ -559,12 +561,27 @@ impl Editor {
         }
     }
 
-    pub fn render_ortho(&self, grid: &Grid, gpu: &mut dyn Gpu) {
+    pub fn render_ortho(&mut self, grid: &Grid, gpu: &mut dyn Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT);
         gpu.set_camera(&self.camera_transform);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
         let half_trans_inv = half_trans.inverse();
+        let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.7)) * half_trans_inv;
+
+        if self.uniforms.len() == 0 {
+            for x in 0..SIZE {
+                self.uniforms.push(vec![]);
+                for y in 0..SIZE {
+                    self.uniforms[x].push(vec![]);
+                    for z in 0..SIZE {
+                        let pos = UVec3::new(x, y, z);
+                        let model_transform = Mat4::from_translation(pos.as_vec3()) * shrink;
+                        self.uniforms[x][y].push(gpu.create_uniform(&model_transform));
+                    }
+                }
+            }
+        }
 
         for pos in grid.positions() {
             let atom = grid.at(pos);
@@ -574,15 +591,6 @@ impl Editor {
                     continue;
                 }
             }
-
-            let atom_size = if let Gas((pressure, _)) = *atom {
-                pressure
-            } else {
-                0.8
-            };
-
-            let shrink = half_trans * Mat4::from_scale(Vec3::splat(atom_size)) * half_trans_inv;
-            let model_transform = Mat4::from_translation(pos.as_vec3()) * shrink;
 
             let mesh = if self.highlighted_atom == Some(pos) {
                 &self.deletion_mesh
@@ -594,9 +602,8 @@ impl Editor {
                 }
             };
 
-            let u = gpu.create_uniform(&model_transform);
-            gpu.render_mesh(mesh, &u);
-            gpu.release_uniform(u);
+            let uniform = &self.uniforms[pos.x][pos.y][pos.z];
+            gpu.render_mesh(mesh, &uniform);
         }
 
         if let Some(proposed_atom) = self.proposed_atom {
