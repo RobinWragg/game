@@ -1,4 +1,4 @@
-use crate::grid::Atom;
+use crate::grid::AtomVariant;
 use crate::math::transform_2d;
 use crate::prelude::*;
 use egui;
@@ -120,18 +120,14 @@ impl Debugger {
             egui::Window::new("Editor").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                     ui.radio_value(
-                        &mut global.selected_atom_type,
-                        Atom::Solid(Vec4::ZERO),
+                        &mut global.selected_atom_variant,
+                        AtomVariant::Solid,
                         "Solid",
                     );
+                    ui.radio_value(&mut global.selected_atom_variant, AtomVariant::Gas, "Gas");
                     ui.radio_value(
-                        &mut global.selected_atom_type,
-                        Atom::Gas((0.0, Vec3::ZERO)),
-                        "Gas",
-                    );
-                    ui.radio_value(
-                        &mut global.selected_atom_type,
-                        Atom::GasSource(Vec3::ZERO),
+                        &mut global.selected_atom_variant,
+                        AtomVariant::GasSource,
                         "GasSource",
                     );
                 });

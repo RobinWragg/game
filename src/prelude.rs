@@ -1,6 +1,6 @@
 pub use crate::debugger::Debugger;
 pub use crate::gpu::{Gpu, Mesh, RenderFeatures, Uniform};
-use crate::grid::Atom;
+use crate::grid::AtomVariant;
 pub use glam::{
     f32::{Mat3, Mat4, Vec2, Vec3, Vec4},
     i32::IVec3,
@@ -17,7 +17,7 @@ use std::sync::Mutex;
 pub use std::time::Instant;
 
 pub struct Global {
-    pub selected_atom_type: Atom,
+    pub selected_atom_variant: AtomVariant,
     pub should_step: bool,
     pub is_playing: bool,
     pub spread_interval: u64,
@@ -25,7 +25,7 @@ pub struct Global {
 
 pub static GLOBAL: Lazy<Mutex<Global>> = Lazy::new(|| {
     Mutex::new(Global {
-        selected_atom_type: Atom::Solid(Vec4::ZERO),
+        selected_atom_variant: AtomVariant::Solid,
         should_step: false,
         is_playing: false,
         spread_interval: 1,

@@ -1,103 +1,59 @@
-use crate::math::{cube_triangles, ray_unitcube_intersection};
+use crate::math::{cone_triangles, cube_triangles, ray_unitcube_intersection};
 use crate::prelude::*;
 use dot_vox;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
-const SIZE: usize = 32;
+const SIZE: usize = 16;
 
 pub mod grid2d;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Atom {
-    Solid(Vec4), // Color. TODO: f32 is gross overkill here.
-    Gas((f32, Vec3)),
-    GasSource(Vec3),
+#[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone, Copy)]
+pub enum AtomVariant {
+    Solid,
+    Gas,
+    GasSource,
 }
 
-fn sum_gas(a: &(f32, Vec3), b: &(f32, Vec3)) -> Atom {
-    let total_p = a.0 + b.0;
-    let total_v = a.1 * a.0 + b.1 * b.0;
-    Gas((total_p, total_v))
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub struct Atom {
+    pres: f32,
+    vel: Vec3,
+    variant: AtomVariant,
 }
 
-use Atom::*;
-
-fn transtellar_list() -> Vec<AtomWithPos> {
-    let vox = dot_vox::load("nopush/Transtellar/Transtellar.vox").unwrap();
-    assert!(vox.models.len() == 1);
-    let model = &vox.models[0];
-    dbg!(model.voxels.len());
-
-    let mut atoms: Vec<AtomWithPos> = model
-        .voxels
-        .iter()
-        .map(|voxel| {
-            AtomWithPos::with_color(
-                UVec3::new(voxel.x.into(), voxel.z.into(), voxel.y.into()),
-                Vec4::new(
-                    vox.palette[voxel.i as usize].r as f32 / 255.0,
-                    vox.palette[voxel.i as usize].g as f32 / 255.0,
-                    vox.palette[voxel.i as usize].b as f32 / 255.0,
-                    1.0,
-                ),
-            )
-        })
-        .collect();
-    // atoms = atoms.split_at(8 * 8 * 8).0.to_vec();
-
-    atoms = {
-        // axes
-        for i in 1..32 {
-            atoms.push(AtomWithPos::with_color(
-                UVec3::new(i, 0, 0),
-                Vec4::new(1.0, 0.0, 0.0, 1.0),
-            ));
-            atoms.push(AtomWithPos::with_color(
-                UVec3::new(0, i, 0),
-                Vec4::new(0.0, 1.0, 0.0, 1.0),
-            ));
-            atoms.push(AtomWithPos::with_color(
-                UVec3::new(0, 0, i),
-                Vec4::new(0.0, 0.0, 1.0, 1.0),
-            ));
+impl Atom {
+    pub fn gas() -> Self {
+        Self {
+            pres: 0.0,
+            vel: Vec3::ZERO,
+            variant: AtomVariant::Gas,
         }
-        atoms
-    };
+    }
 
-    atoms
+    pub fn solid() -> Self {
+        Self {
+            pres: 0.0,
+            vel: Vec3::ZERO,
+            variant: AtomVariant::Solid,
+        }
+    }
 }
 
-fn hollow_out(atoms: &mut Vec<AtomWithPos>) {
-    let atoms_2 = atoms.clone();
-    atoms.retain(|a| {
-        atoms_2
-            .iter()
-            .find(|b| b.pos.x == a.pos.x + 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
-            .is_none()
-            || atoms_2
-                .iter()
-                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y + 1 && b.pos.z == a.pos.z)
-                .is_none()
-            || atoms_2
-                .iter()
-                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z + 1)
-                .is_none()
-            || atoms_2
-                .iter()
-                .find(|b| b.pos.x == a.pos.x - 1 && b.pos.y == a.pos.y && b.pos.z == a.pos.z)
-                .is_none()
-            || atoms_2
-                .iter()
-                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y - 1 && b.pos.z == a.pos.z)
-                .is_none()
-            || atoms_2
-                .iter()
-                .find(|b| b.pos.x == a.pos.x && b.pos.y == a.pos.y && b.pos.z == a.pos.z - 1)
-                .is_none()
-    });
+fn sum_gas(a: &Atom, b: &Atom) -> Atom {
+    debug_assert_eq!(a.variant, Gas);
+    debug_assert_eq!(b.variant, Gas);
+    let pres = a.pres + b.pres;
+    let vel = a.vel * a.pres + b.vel * b.pres;
+    Atom {
+        pres,
+        vel,
+        variant: Gas,
+    }
 }
+
+use AtomVariant::*;
 
 fn adjacent_atom(origin_atom: UVec3, nearby_pos: Vec3) -> UVec3 {
     let origin = origin_atom.as_vec3() + Vec3::splat(0.5);
@@ -149,25 +105,10 @@ fn closest_ray_grid_intersection<'a>(
 }
 
 fn atom_color(atom: &Atom) -> Vec4 {
-    match atom {
-        Solid(color) => *color,
-        Gas(_) => Vec4::new(1.0, 0.0, 1.0, 1.0),
-        GasSource(_) => Vec4::splat(1.0),
-    }
-}
-
-#[derive(Clone)]
-struct AtomWithPos {
-    pub pos: UVec3, // TODO: i16 or even i8 might be ok here.
-    pub variant: Atom,
-}
-
-impl AtomWithPos {
-    fn with_color(pos: UVec3, color: Vec4) -> Self {
-        Self {
-            pos,
-            variant: Solid(color),
-        }
+    match atom.variant {
+        Solid => Vec4::new(0.5, 0.5, 0.5, 1.0),
+        Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
+        GasSource => Vec4::splat(1.0),
     }
 }
 
@@ -205,12 +146,12 @@ impl Grid {
             }
             Err(_) => {
                 println!("Creating new atoms");
-                let mut atoms = vec![vec![vec![Gas((0.0, Vec3::ZERO)); SIZE]; SIZE]; SIZE];
-                atoms[1][1][1] = Solid(Vec4::new(0.5, 0.5, 0.5, 1.0));
-                atoms[SIZE - 2][1][1] = Solid(Vec4::new(1.0, 0.0, 0.0, 1.0));
-                atoms[1][SIZE - 2][1] = Solid(Vec4::new(0.0, 1.0, 0.0, 1.0));
-                atoms[1][1][SIZE - 2] = Solid(Vec4::new(0.0, 0.0, 1.0, 1.0));
-                atoms[SIZE - 2][SIZE - 2][SIZE - 2] = Solid(Vec4::splat(1.0));
+                let mut atoms = vec![vec![vec![Atom::gas(); SIZE]; SIZE]; SIZE];
+                atoms[1][1][1] = Atom::solid();
+                atoms[SIZE - 2][1][1] = Atom::solid();
+                atoms[1][SIZE - 2][1] = Atom::solid();
+                atoms[1][1][SIZE - 2] = Atom::solid();
+                atoms[SIZE - 2][SIZE - 2][SIZE - 2] = Atom::solid();
                 atoms
             }
         };
@@ -247,167 +188,22 @@ impl Grid {
         })
     }
 
-    fn mut_gases_2x2x2(&mut self, pos: UVec3) -> Vec<&mut (f32, Vec3)> {
-        let mut gases = Vec::with_capacity(8); // Preallocate for 2x2x2 section
-
-        let atoms_ptr = self.atoms.as_mut_ptr(); // Get a raw pointer to the outer grid
-
-        unsafe {
-            for dx in 0..2 {
-                for dy in 0..2 {
-                    for dz in 0..2 {
-                        // Calculate the raw pointer to the current voxel
-                        let slice_ptr = atoms_ptr.add(pos.x + dx);
-                        let column_ptr = (*slice_ptr).as_mut_ptr().add(pos.y + dy);
-                        let atom_ptr = (*column_ptr).as_mut_ptr().add(pos.z + dz);
-
-                        // Dereference the pointer and check if it's a Gas atom
-                        if let Atom::Gas(gas) = &mut *atom_ptr {
-                            gases.push(gas);
-                        }
-                    }
-                }
-            }
-        }
-
-        gases
-    }
-
-    fn spread_gas(&mut self, spread_interval: u64) {
-        let step_counter = self.step_counter;
-
-        let mut reach_local_equilibrium = |pos: UVec3| {
-            let gases = self.mut_gases_2x2x2(pos);
-            debug_assert_ne!(gases.len(), 0);
-
-            let mut pressure_total = 0.0;
-            let mut velocity_total = Vec3::ZERO;
-            for gas in &gases {
-                pressure_total += gas.0;
-                velocity_total += gas.1;
-            }
-
-            let divided_total_pressure = pressure_total / gases.len() as f32;
-            let divided_total_velocity = velocity_total / gases.len() as f32;
-
-            for gas in gases {
-                gas.0 = divided_total_pressure;
-                gas.1 = divided_total_velocity;
-            }
-        };
-
-        if step_counter % (spread_interval * 2) == 0 {
-            for x in (0..SIZE).step_by(2) {
-                for y in (0..SIZE).step_by(2) {
-                    for z in (0..SIZE).step_by(2) {
-                        reach_local_equilibrium(UVec3::new(x, y, z));
-                    }
-                }
-            }
-        } else if step_counter % (spread_interval * 2) == spread_interval {
-            for x in (1..SIZE - 1).step_by(2) {
-                for y in (1..SIZE - 1).step_by(2) {
-                    for z in (1..SIZE - 1).step_by(2) {
-                        reach_local_equilibrium(UVec3::new(x, y, z));
-                    }
-                }
-            }
-        }
-    }
-
     fn apply_edge_vacuum(&mut self) {
         // TODO: This isn't writing over the edge planes, only the corners.
         let s = SIZE - 1;
         for a in 0..SIZE {
             for b in 0..SIZE {
-                self.atoms[a][b][0] = Gas((0.0, Vec3::ZERO));
-                self.atoms[a][0][b] = Gas((0.0, Vec3::ZERO));
-                self.atoms[0][a][b] = Gas((0.0, Vec3::ZERO));
-                self.atoms[a][b][s] = Gas((0.0, Vec3::ZERO));
-                self.atoms[a][s][b] = Gas((0.0, Vec3::ZERO));
-                self.atoms[s][a][b] = Gas((0.0, Vec3::ZERO));
+                self.atoms[a][b][0] = Atom::gas();
+                self.atoms[a][0][b] = Atom::gas();
+                self.atoms[0][a][b] = Atom::gas();
+                self.atoms[a][b][s] = Atom::gas();
+                self.atoms[a][s][b] = Atom::gas();
+                self.atoms[s][a][b] = Atom::gas();
             }
         }
-    }
-
-    fn step_gas_source(&mut self) {
-        const SOURCE_PRESSURE: f32 = 1.0;
-
-        let sources: Vec<(UVec3, Vec3)> = self
-            .positions()
-            .filter_map(|pos| {
-                if let GasSource(v) = self.at(pos) {
-                    Some((pos, *v))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        for source in sources {
-            let pos = source.0;
-            let source_v = source.1;
-            let adjacent = (pos.as_vec3() + Vec3::splat(0.5) + source_v.normalize()).as_usizevec3();
-            debug_assert_eq!(pos.manhattan_distance(adjacent), 1);
-
-            if let Gas(old) = self.atoms[adjacent.x][adjacent.y][adjacent.z] {
-                let new_atom = sum_gas(&old, &(SOURCE_PRESSURE, source_v));
-                self.atoms[adjacent.x][adjacent.y][adjacent.z] = new_atom;
-            }
-        }
-    }
-
-    fn simulate_gas_velocity(&mut self) {
-        let mut gases_to_zero = vec![];
-        let mut gases_to_add = vec![];
-
-        for src_pos in self.positions() {
-            if let Gas(src) = self.at(src_pos) {
-                if src.1.length_squared() < 0.001 {
-                    continue;
-                }
-
-                let dst_pos =
-                    (src_pos.as_vec3() + Vec3::splat(0.5) + src.1.normalize()).as_usizevec3();
-                debug_assert!(src_pos.chebyshev_distance(dst_pos) <= 1);
-                debug_assert_ne!(src_pos, dst_pos);
-
-                if dst_pos.x < SIZE && dst_pos.y < SIZE && dst_pos.z < SIZE {
-                    if let Gas(_) = self.atoms[dst_pos.x][dst_pos.y][dst_pos.z] {
-                        gases_to_add.push((dst_pos, *src));
-                    }
-                }
-
-                // TODO: If a gas hits a solid obliquely, it should maintain part of its velocity.
-                gases_to_zero.push(src_pos);
-            }
-        }
-
-        for to_zero in gases_to_zero {
-            self.atoms[to_zero.x][to_zero.y][to_zero.z] = Gas((0.0, Vec3::ZERO));
-        }
-
-        for (dst_pos, src) in gases_to_add {
-            if let Gas(dst) = &self.atoms[dst_pos.x][dst_pos.y][dst_pos.z] {
-                self.atoms[dst_pos.x][dst_pos.y][dst_pos.z] = sum_gas(dst, &src);
-            }
-        }
-    }
-
-    fn print_p(&self, label: &str) {
-        let mut total_p = 0.0;
-        for p in self.positions() {
-            if let Gas((p, _)) = self.at(p) {
-                total_p += p;
-            }
-        }
-        println!("{} {}", label, total_p);
     }
 
     fn step(&mut self, spread_interval: u64) {
-        self.simulate_gas_velocity();
-        self.step_gas_source();
-        self.spread_gas(spread_interval);
         self.apply_edge_vacuum();
 
         self.step_counter = self.step_counter.wrapping_add(1);
@@ -518,8 +314,8 @@ impl Editor {
                 .xyz()
                 .normalize();
 
-            let selectable_positions = grid.positions().filter(|pos| match grid.at(*pos) {
-                Gas((p, _)) => *p > 0.1,
+            let selectable_positions = grid.positions().filter(|pos| match grid.at(*pos).variant {
+                Gas => false,
                 _ => true,
             });
 
@@ -547,16 +343,16 @@ impl Editor {
 
         if should_add_atom {
             if let Some(position) = self.proposed_atom {
-                let new_atom = match global.selected_atom_type {
-                    Solid(_) => Solid(Vec4::new(0.5, 0.5, 0.5, 1.0)),
-                    Gas(_) => Gas((1.0, Vec3::ZERO)),
-                    GasSource(_) => GasSource(Vec3::new(100.0, 0.0, 0.0)),
+                let new_atom = Atom {
+                    pres: 0.0,
+                    vel: Vec3::ZERO,
+                    variant: global.selected_atom_variant,
                 };
                 *grid.at_mut(position) = new_atom;
             }
         } else if should_remove_atom {
             if let Some(highlighted_atom) = self.highlighted_atom {
-                *grid.at_mut(highlighted_atom) = Gas((0.0, Vec3::ZERO));
+                *grid.at_mut(highlighted_atom) = Atom::gas();
             }
         }
     }
@@ -583,27 +379,40 @@ impl Editor {
             }
         }
 
+        // cubes
         for pos in grid.positions() {
             let atom = grid.at(pos);
 
-            if let Gas((p, _)) = *atom {
-                if p < 0.05 {
-                    continue;
-                }
+            if atom.variant == Gas && atom.pres < 0.05 {
+                continue;
             }
 
             let mesh = if self.highlighted_atom == Some(pos) {
                 &self.deletion_mesh
             } else {
-                match atom {
-                    Solid(_) => &self.solid_mesh,
-                    Gas(_) => &self.gas_mesh,
-                    GasSource(_) => &self.gas_source_mesh,
+                match atom.variant {
+                    Solid => &self.solid_mesh,
+                    Gas => &self.gas_mesh,
+                    GasSource => &self.gas_source_mesh,
                 }
             };
 
             let uniform = &self.uniforms[pos.x][pos.y][pos.z];
             gpu.render_mesh(mesh, &uniform);
+        }
+
+        // velocities
+        let cone = cone_triangles();
+        let cone_mesh = gpu.create_mesh_with_color(&cone, &Vec4::new(1.0, 1.0, 1.0, 1.0));
+        for pos in grid.positions() {
+            let atom = grid.at(pos);
+
+            if atom.variant != Gas || atom.vel.length() < 0.01 {
+                continue;
+            }
+
+            let uniform = &self.uniforms[pos.x][pos.y][pos.z];
+            gpu.render_mesh(&cone_mesh, &uniform);
         }
 
         if let Some(proposed_atom) = self.proposed_atom {
@@ -678,7 +487,7 @@ impl Viewer {
         for pos in grid.positions() {
             let atom = grid.at(pos);
 
-            if let Gas(p) = *atom {
+            if atom.variant == Gas && atom.pres < 0.05 {
                 continue;
             }
 

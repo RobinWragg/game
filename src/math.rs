@@ -110,6 +110,27 @@ pub fn cube_triangles() -> Vec<Vec3> {
     ]
 }
 
+pub fn cone_triangles() -> Vec<Vec3> {
+    let mut triangles = vec![];
+    let num_segments = 8;
+    let radius = 1.0;
+    let height = 2.0;
+
+    for i in 0..num_segments {
+        let angle1 = (i as f32) * (2.0 * PI / num_segments as f32);
+        let angle2 = ((i + 1) % num_segments) as f32 * (2.0 * PI / num_segments as f32);
+
+        let p1 = Vec3::new(radius * angle1.cos(), radius * angle1.sin(), 0.0);
+        let p2 = Vec3::new(radius * angle2.cos(), radius * angle2.sin(), 0.0);
+        let p3 = Vec3::new(0.0, 0.0, height);
+
+        triangles.push(p1);
+        triangles.push(p2);
+        triangles.push(p3);
+    }
+    triangles
+}
+
 // fn intersect_grid_1d(cube_size: i32, ray_start: f32, ray_end: f32) -> Vec<i32> {
 // }
 

@@ -61,8 +61,8 @@ impl Game {
 
         self.debugger.profile("Render", || {
             self.grid_editor.render_ortho(&self.grid, gpu);
-            self.grid_viewer
-                .render(&self.grid, Vec2::new(1.0, 0.0), gpu);
+            // self.grid_viewer
+            //     .render(&self.grid, Vec2::new(1.0, 0.0), gpu);
         });
 
         self.debugger.render(gpu);
