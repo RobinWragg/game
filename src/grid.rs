@@ -225,7 +225,7 @@ pub struct Editor {
 }
 
 impl Editor {
-    pub fn new(gpu: &dyn Gpu) -> Self {
+    pub fn new(gpu: &Gpu) -> Self {
         Self {
             camera_transform: Mat4::IDENTITY,
             rotation: Vec2::splat(PI / -8.0),
@@ -357,8 +357,8 @@ impl Editor {
         }
     }
 
-    pub fn render_ortho(&mut self, grid: &Grid, gpu: &mut dyn Gpu) {
-        gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT);
+    pub fn render_ortho(&mut self, grid: &Grid, gpu: &mut Gpu) {
+        gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT, None);
         gpu.set_camera(&self.camera_transform);
 
         let half_trans = Mat4::from_translation(Vec3::splat(0.5));
@@ -431,7 +431,7 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    pub fn new(gpu: &dyn Gpu) -> Self {
+    pub fn new(gpu: &Gpu) -> Self {
         let verts = [
             // front
             Vec3::new(0.0, 0.0, 0.0),
@@ -472,8 +472,8 @@ impl Viewer {
         Self { mesh }
     }
 
-    pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut dyn Gpu) {
-        gpu.set_render_features(RenderFeatures::DEPTH);
+    pub fn render(&self, grid: &Grid, global_translation: Vec2, gpu: &mut Gpu) {
+        gpu.set_render_features(RenderFeatures::DEPTH, None);
 
         let camera_transform = Mat4::from_translation(global_translation.extend(0.5))
             * Mat4::from_scale(Vec3::splat(0.005));

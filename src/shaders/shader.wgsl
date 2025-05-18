@@ -14,20 +14,24 @@ struct VertToFrag {
     @location(2) uv: vec2<f32>,
 }
 
-struct Uniform {
+struct ModelTransform {
     matrix: mat4x4<f32>,
+    // TODO: normal_matrix: mat3x3<f32>,
 }
 
 @group(0) @binding(0)
-var<uniform> camera_uniform: Uniform;
+var<uniform> camera_matrix: mat4x4<f32>;
 
 @group(1) @binding(0)
-var<uniform> model_uniform: Uniform;
+var<uniform> color_uniform: vec4<f32>;
+
+@group(2) @binding(0)
+var<uniform> model_uniform: ModelTransform;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFrag {
     var out: VertToFrag;
-    out.pos = camera_uniform.matrix * model_uniform.matrix * vec4<f32>(vert.pos, 1.0);
+    out.pos = camera_matrix * model_uniform.matrix * vec4<f32>(vert.pos, 1.0);
     out.normal = vert.normal; // TODO: transform using model_uniform
     out.color = srgb_to_linear(vert.color);
 
@@ -48,16 +52,16 @@ fn vs_main(@builtin(vertex_index) vert_index: u32, vert: VertInput) -> VertToFra
     return out;
 }
 
-@group(2) @binding(0)
+@group(3) @binding(0)
 var texture_view: texture_2d<f32>;
-@group(2) @binding(1)
+@group(3) @binding(1)
 var texture_sampler: sampler;
 
 @fragment
 fn fs_main(in: VertToFrag) -> @location(0) vec4<f32> {
     let tex_color = textureSample(texture_view, texture_sampler, in.uv);
 
-    let pre_light_color = tex_color * in.color;
+    let pre_light_color =  in.color * tex_color * color_uniform;
 
     if LIGHTING_ENABLED {
         let light = dot(in.normal, normalize(vec3<f32>(0.5, -1.0, 0.2))) / 2.0 + 0.5;
