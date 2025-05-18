@@ -12,6 +12,7 @@ bitflags! {
     pub struct RenderFeatures: usize {
         const DEPTH = 0b0001;
         const LIGHT = 0b0010;
+        const RENDER_BACKFACES = 0b0100; // Backface culling is enabled by default
     }
 }
 
@@ -48,7 +49,7 @@ pub struct Gpu {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipelines: [wgpu::RenderPipeline; 4],
+    pipelines: Vec<wgpu::RenderPipeline>,
     depth_texture_view: wgpu::TextureView,
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<Texture>,
@@ -62,6 +63,7 @@ pub struct Gpu {
     render_pass: Option<wgpu::RenderPass<'static>>,
     width: u32,
     height: u32,
+    frame_count: u64,
 }
 
 impl Gpu {
@@ -160,7 +162,7 @@ impl Gpu {
             label: None,
         });
 
-        let pipelines: [wgpu::RenderPipeline; 4] = {
+        let pipelines = {
             // For every feature e.g. DEPTH and LIGHT, we need:
             // A pipeline with depth+light
             // A pipeline with depth+nolight
@@ -224,6 +226,7 @@ impl Gpu {
             uniform_ring_index: 0,
             camera_uniform: None,
             color_uniform: None,
+            frame_count: 0,
         };
 
         // The white texture is used when the user doesn't want texturing; the vertex
@@ -447,6 +450,8 @@ impl Gpu {
     }
 
     pub fn begin_frame(&mut self) {
+        self.frame_count = self.frame_count.wrapping_add(1);
+
         let surface_texture = self.surface.get_current_texture().unwrap();
 
         let mut command_encoder = self
@@ -500,7 +505,13 @@ impl Gpu {
         self.surface_texture.take().unwrap().present();
     }
 
-    pub fn set_render_features(&mut self, features: RenderFeatures, color: Option<&Vec4>) {
+    pub fn set_render_features(&mut self, mut features: RenderFeatures, color: Option<&Vec4>) {
+        // Flash culled backfaces in debug builds
+        #[cfg(debug_assertions)]
+        if !features.contains(RenderFeatures::RENDER_BACKFACES) && self.frame_count % 30 < 15 {
+            features.insert(RenderFeatures::RENDER_BACKFACES);
+        }
+
         let pipeline = &self.pipelines[features.bits()];
         self.render_pass.as_mut().unwrap().set_pipeline(&pipeline);
 
@@ -623,7 +634,11 @@ impl Gpu {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
+                cull_mode: if features.contains(RenderFeatures::RENDER_BACKFACES) {
+                    None
+                } else {
+                    Some(wgpu::Face::Back)
+                },
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
