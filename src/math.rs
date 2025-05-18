@@ -124,9 +124,15 @@ pub fn cone_triangles() -> Vec<Vec3> {
         let p2 = Vec3::new(radius * angle2.cos(), radius * angle2.sin(), 0.0);
         let p3 = Vec3::new(0.0, 0.0, height);
 
+        // Cone base segment
+        triangles.push(Vec3::ZERO);
         triangles.push(p1);
         triangles.push(p2);
+
+        // Cone side (out of order to make it anticlockwise)
+        triangles.push(p1);
         triangles.push(p3);
+        triangles.push(p2);
     }
     triangles
 }
