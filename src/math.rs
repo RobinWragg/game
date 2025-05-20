@@ -258,3 +258,106 @@ mod tests {
         assert!(i.is_some());
     }
 }
+
+pub fn sphere_triangles() -> Vec<Vec3> {
+    // determines the level of detail (higher = more triangles).
+    let subdivisions = 1;
+
+    // Nested function to find or create the middle point
+    fn get_middle_point(
+        p1: usize,
+        p2: usize,
+        vertices: &mut Vec<Vec3>,
+        cache: &mut HashMap<(usize, usize), usize>,
+    ) -> usize {
+        // Ensure consistent ordering of the key
+        let key = if p1 < p2 { (p1, p2) } else { (p2, p1) };
+
+        // Check if the middle point is already in the cache
+        if let Some(&index) = cache.get(&key) {
+            return index;
+        }
+
+        // Calculate the middle point and normalize it
+        let middle = (vertices[p1] + vertices[p2]).normalize();
+        let index = vertices.len();
+        vertices.push(middle);
+
+        // Store it in the cache
+        cache.insert(key, index);
+
+        index
+    }
+
+    // Create the initial icosahedron
+    let t = (1.0 + 5.0f32.sqrt()) / 2.0;
+
+    let mut vertices = vec![
+        Vec3::new(-1.0, t, 0.0).normalize(),
+        Vec3::new(1.0, t, 0.0).normalize(),
+        Vec3::new(-1.0, -t, 0.0).normalize(),
+        Vec3::new(1.0, -t, 0.0).normalize(),
+        Vec3::new(0.0, -1.0, t).normalize(),
+        Vec3::new(0.0, 1.0, t).normalize(),
+        Vec3::new(0.0, -1.0, -t).normalize(),
+        Vec3::new(0.0, 1.0, -t).normalize(),
+        Vec3::new(t, 0.0, -1.0).normalize(),
+        Vec3::new(t, 0.0, 1.0).normalize(),
+        Vec3::new(-t, 0.0, -1.0).normalize(),
+        Vec3::new(-t, 0.0, 1.0).normalize(),
+    ];
+
+    let mut faces = vec![
+        [0, 11, 5],
+        [0, 5, 1],
+        [0, 1, 7],
+        [0, 7, 10],
+        [0, 10, 11],
+        [1, 5, 9],
+        [5, 11, 4],
+        [11, 10, 2],
+        [10, 7, 6],
+        [7, 1, 8],
+        [3, 9, 4],
+        [3, 4, 2],
+        [3, 2, 6],
+        [3, 6, 8],
+        [3, 8, 9],
+        [4, 9, 5],
+        [2, 4, 11],
+        [6, 2, 10],
+        [8, 6, 7],
+        [9, 8, 1],
+    ];
+
+    // Subdivide the faces
+    let mut middle_point_cache = HashMap::new();
+    for _ in 0..subdivisions {
+        let mut new_faces = Vec::new();
+        for face in &faces {
+            let [a, b, c] = *face;
+
+            // Get middle points
+            let ab = get_middle_point(a, b, &mut vertices, &mut middle_point_cache);
+            let bc = get_middle_point(b, c, &mut vertices, &mut middle_point_cache);
+            let ca = get_middle_point(c, a, &mut vertices, &mut middle_point_cache);
+
+            // Create new faces
+            new_faces.push([a, ab, ca]);
+            new_faces.push([b, bc, ab]);
+            new_faces.push([c, ca, bc]);
+            new_faces.push([ab, bc, ca]);
+        }
+        faces = new_faces;
+    }
+
+    // Convert faces into a flat list of triangles
+    let mut triangles = Vec::new();
+    for face in faces {
+        triangles.push(vertices[face[0]]);
+        triangles.push(vertices[face[2]]);
+        triangles.push(vertices[face[1]]);
+    }
+
+    triangles
+}

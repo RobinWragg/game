@@ -505,7 +505,7 @@ impl Gpu {
         self.surface_texture.take().unwrap().present();
     }
 
-    pub fn set_render_features(&mut self, mut features: RenderFeatures, color: Option<&Vec4>) {
+    pub fn set_render_features(&mut self, mut features: RenderFeatures, color: Option<Vec4>) {
         // Flash culled backfaces in debug builds
         #[cfg(debug_assertions)]
         if !features.contains(RenderFeatures::RENDER_BACKFACES) && self.frame_count % 30 < 15 {
@@ -519,7 +519,7 @@ impl Gpu {
             self.release_uniform(cu);
         }
 
-        self.color_uniform = Some(self.create_uniform(color.unwrap_or(&Vec4::splat(1.0))));
+        self.color_uniform = Some(self.create_uniform(&color.unwrap_or(Vec4::splat(1.0))));
     }
 
     pub fn render_mesh(&mut self, mesh: &Mesh, transform: &Uniform) {

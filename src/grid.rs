@@ -1,6 +1,4 @@
-use crate::math::{
-    cone_triangles, cube_triangles, ray_unitcube_intersection, rotation_from_z_axis_to_direction,
-};
+use crate::math::*;
 use crate::prelude::*;
 use dot_vox;
 use serde::{Deserialize, Serialize};
@@ -215,7 +213,7 @@ impl Grid {
             variant: Gas,
         };
         self.atoms[hs + 1][hs + 1][hs + 1] = Atom {
-            pres: 1.0,
+            pres: 0.5,
             vel: Vec3::splat(1.0).normalize(),
             variant: Gas,
         };
@@ -230,11 +228,7 @@ pub struct Editor {
     mouse_pos: Option<Vec2>,
     highlighted_atom: Option<UVec3>,
     proposed_atom: Option<UVec3>,
-    solid_mesh: Mesh,
-    gas_mesh: Mesh,
-    gas_source_mesh: Mesh,
-    proposal_mesh: Mesh,
-    deletion_mesh: Mesh,
+    cube_mesh: Mesh,
     uniforms: Vec<Vec<Vec<Uniform>>>,
 }
 
@@ -246,14 +240,7 @@ impl Editor {
             mouse_pos: None,
             highlighted_atom: None,
             proposed_atom: None,
-            solid_mesh: gpu
-                .create_mesh_with_color(&cube_triangles(), Vec4::new(0.5, 0.5, 0.5, 1.0)),
-            gas_mesh: gpu.create_mesh_with_color(&cube_triangles(), Vec4::new(1.0, 0.0, 1.0, 1.0)),
-            gas_source_mesh: gpu.create_mesh_with_color(&cube_triangles(), Vec4::splat(1.0)),
-            proposal_mesh: gpu
-                .create_mesh_with_color(&cube_triangles(), Vec4::new(0.0, 1.0, 0.0, 1.0)),
-            deletion_mesh: gpu
-                .create_mesh_with_color(&cube_triangles(), Vec4::new(1.0, 0.0, 0.0, 1.0)),
+            cube_mesh: gpu.create_mesh(&cube_triangles(), None, None),
             uniforms: vec![],
         }
     }
@@ -393,41 +380,60 @@ impl Editor {
         }
 
         // cubes
-        gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT, None);
+        gpu.set_render_features(
+            RenderFeatures::DEPTH | RenderFeatures::LIGHT,
+            Some(Vec4::new(0.5, 0.5, 0.5, 1.0)),
+        );
         for pos in grid.positions() {
             let atom = grid.at(pos);
 
-            if atom.variant == Gas {
+            if atom.variant == Gas || self.highlighted_atom == Some(pos) {
                 continue;
             }
 
-            let mesh = if self.highlighted_atom == Some(pos) {
-                &self.deletion_mesh
-            } else {
-                match atom.variant {
-                    Solid => &self.solid_mesh,
-                    Gas => &self.gas_mesh,
-                    GasSource => &self.gas_source_mesh,
-                }
-            };
-
             let uniform = &self.uniforms[pos.x][pos.y][pos.z];
-            gpu.render_mesh(mesh, &uniform);
+            gpu.render_mesh(&self.cube_mesh, &uniform);
+        }
+
+        // pressures
+        gpu.set_render_features(
+            RenderFeatures::DEPTH | RenderFeatures::LIGHT,
+            Some(Vec4::new(1.0, 0.0, 1.0, 1.0)),
+        );
+        let cone = sphere_triangles();
+        let cone_mesh = gpu.create_mesh(&cone, None, None);
+        for pos in grid.positions() {
+            let pres = grid.at(pos).pres;
+
+            if pres < 0.001 {
+                continue;
+            }
+
+            let model_transform = Mat4::from_scale_rotation_translation(
+                Vec3::splat(pres * 0.5),
+                Quat::IDENTITY,
+                pos.as_vec3() + Vec3::splat(0.5),
+            );
+
+            debug_assert!(model_transform.is_finite());
+            let uniform = gpu.create_uniform(&model_transform);
+            gpu.render_mesh(&cone_mesh, &uniform);
+            gpu.release_uniform(uniform);
         }
 
         // velocities
-        gpu.set_render_features(RenderFeatures::DEPTH, Some(&Vec4::new(1.0, 0.0, 1.0, 1.0)));
+        gpu.set_render_features(
+            RenderFeatures::DEPTH | RenderFeatures::LIGHT,
+            Some(Vec4::new(0.0, 1.0, 1.0, 1.0)),
+        );
         let cone = cone_triangles();
-        let cone_mesh = gpu.create_mesh_with_color(&cone, Vec4::new(1.0, 1.0, 1.0, 1.0));
+        let cone_mesh = gpu.create_mesh(&cone, None, None);
         for pos in grid.positions() {
             let vel = grid.at(pos).vel;
 
             if vel.length_squared() < 0.001 {
                 continue;
             }
-
-            let translate_to_atom = Mat4::from_translation(pos.as_vec3());
-            let translate_to_atom_center = Mat4::from_translation(Vec3::splat(0.5));
 
             let q = rotation_from_z_axis_to_direction(vel.normalize());
 
@@ -437,18 +443,30 @@ impl Editor {
             let uniform = gpu.create_uniform(&model_transform);
             gpu.render_mesh(&cone_mesh, &uniform);
             gpu.release_uniform(uniform);
-            // break;
         }
 
         // proposed atom
-        gpu.set_render_features(RenderFeatures::DEPTH | RenderFeatures::LIGHT, None);
+        gpu.set_render_features(
+            RenderFeatures::DEPTH | RenderFeatures::LIGHT,
+            Some(Vec4::new(0.0, 1.0, 0.0, 1.0)),
+        );
         if let Some(proposed_atom) = self.proposed_atom {
             let shrink = half_trans * Mat4::from_scale(Vec3::splat(0.5)) * half_trans_inv;
             let model_transform = Mat4::from_translation(proposed_atom.as_vec3()) * shrink;
 
             let t = gpu.create_uniform(&model_transform);
-            gpu.render_mesh(&self.proposal_mesh, &t);
+            gpu.render_mesh(&self.cube_mesh, &t);
             gpu.release_uniform(t);
+        }
+
+        // atom to delete
+        gpu.set_render_features(
+            RenderFeatures::DEPTH | RenderFeatures::LIGHT,
+            Some(Vec4::new(1.0, 0.0, 0.0, 1.0)),
+        );
+        if let Some(h) = self.highlighted_atom {
+            let uniform = &self.uniforms[h.x][h.y][h.z];
+            gpu.render_mesh(&self.cube_mesh, &uniform);
         }
     }
 }
