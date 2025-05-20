@@ -1,8 +1,8 @@
 use crate::prelude::*;
 
-pub fn transform_2d(pos: &Vec2, mat: &Mat4) -> Vec2 {
+pub fn transform_2d(pos: Vec2, mat: Mat4) -> Vec2 {
     let pos4 = Vec4::new(pos.x, pos.y, 0.0, 1.0);
-    (*mat * pos4).xy()
+    (mat * pos4).xy()
 }
 
 fn ray_triangle_intersection(
@@ -113,8 +113,8 @@ pub fn cube_triangles() -> Vec<Vec3> {
 pub fn cone_triangles() -> Vec<Vec3> {
     let mut triangles = vec![];
     let num_segments = 8;
-    let radius = 1.0;
-    let height = 2.0;
+    let radius = 0.25;
+    let height = 1.0;
 
     for i in 0..num_segments {
         let angle1 = (i as f32) * (2.0 * PI / num_segments as f32);
@@ -194,6 +194,31 @@ pub fn ray_unitcube_intersection(
         Some(ray_origin + ray_dir * t_hit)
     } else {
         None
+    }
+}
+
+pub fn rotation_from_z_axis_to_direction(target_dir: Vec3) -> Quat {
+    debug_assert!(target_dir.is_normalized());
+
+    let from = Vec3::Z;
+
+    // If already aligned, or isn't normalized (failure state, see assertion above)
+    if from.abs_diff_eq(target_dir, 1e-6) || !target_dir.is_normalized() {
+        Quat::IDENTITY
+    }
+    // If opposite
+    else if from.abs_diff_eq(-target_dir, 1e-6) {
+        // 180-degree rotation around an arbitrary axis perpendicular to from
+        let axis = if from.cross(Vec3::X).length_squared() > 1e-6 {
+            from.cross(Vec3::X).normalize()
+        } else {
+            from.cross(Vec3::Y).normalize()
+        };
+        Quat::from_axis_angle(axis, std::f32::consts::PI)
+    }
+    // General case
+    else {
+        Quat::from_rotation_arc(from, target_dir)
     }
 }
 

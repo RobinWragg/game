@@ -440,13 +440,13 @@ impl Gpu {
         translation * pixels_to_normalized
     }
 
-    pub fn window_to_normalized(&self, window_pos: &Vec2) -> Vec2 {
-        transform_2d(&window_pos, &self.window_to_normalized_transform())
+    pub fn window_to_normalized(&self, window_pos: Vec2) -> Vec2 {
+        transform_2d(window_pos, self.window_to_normalized_transform())
     }
 
     #[deprecated]
-    pub fn create_mesh_with_color(&self, positions: &[Vec3], color: &Vec4) -> Mesh {
-        self.create_mesh(positions, Some(&vec![*color; positions.len()]), None)
+    pub fn create_mesh_with_color(&self, positions: &[Vec3], color: Vec4) -> Mesh {
+        self.create_mesh(positions, Some(&vec![color; positions.len()]), None)
     }
 
     pub fn begin_frame(&mut self) {
@@ -539,12 +539,12 @@ impl Gpu {
         render_pass.draw(0..mesh.vert_count as u32, 0..1);
     }
 
-    pub fn set_camera(&mut self, matrix: &Mat4) {
+    pub fn set_camera(&mut self, matrix: Mat4) {
         if let Some(cu) = self.camera_uniform.take() {
             self.release_uniform(cu);
         }
 
-        let m = Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0)) * *matrix;
+        let m = Mat4::from_scale(Vec3::new(1.0 / self.aspect_ratio(), 1.0, 1.0)) * matrix;
         let u = self.create_uniform(&m);
 
         self.camera_uniform = Some(u);

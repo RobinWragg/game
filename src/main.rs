@@ -75,7 +75,7 @@ impl ApplicationHandler for App {
                     Vec2::new(size.width as f32, size.height as f32)
                 };
                 self.mouse_pos = Vec2::new(position.x as f32, position.y as f32);
-                let normalized_coords = gpu.window_to_normalized(&self.mouse_pos);
+                let normalized_coords = gpu.window_to_normalized(self.mouse_pos);
                 game.push_event(Event::MousePos(normalized_coords));
             }
             WindowEvent::MouseInput {
@@ -86,22 +86,22 @@ impl ApplicationHandler for App {
                 if button == MouseButton::Left {
                     match state {
                         ElementState::Pressed => {
-                            let normalized_coords = gpu.window_to_normalized(&self.mouse_pos);
+                            let normalized_coords = gpu.window_to_normalized(self.mouse_pos);
                             game.push_event(Event::LeftClickPressed(normalized_coords));
                         }
                         ElementState::Released => {
-                            let normalized_coords = gpu.window_to_normalized(&self.mouse_pos);
+                            let normalized_coords = gpu.window_to_normalized(self.mouse_pos);
                             game.push_event(Event::LeftClickReleased(normalized_coords));
                         }
                     }
                 } else if button == MouseButton::Right {
                     match state {
                         ElementState::Pressed => {
-                            let normalized_coords = gpu.window_to_normalized(&self.mouse_pos);
+                            let normalized_coords = gpu.window_to_normalized(self.mouse_pos);
                             game.push_event(Event::RightClickPressed(normalized_coords));
                         }
                         ElementState::Released => {
-                            let normalized_coords = gpu.window_to_normalized(&self.mouse_pos);
+                            let normalized_coords = gpu.window_to_normalized(self.mouse_pos);
                             game.push_event(Event::RightClickReleased(normalized_coords));
                         }
                     }

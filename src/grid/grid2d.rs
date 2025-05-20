@@ -61,10 +61,10 @@ impl Grid2d {
         grid
     }
 
-    fn modify_under_path(&mut self, start: &Vec2, end: &Vec2, atom_to_write: Atom2d) {
+    fn modify_under_path(&mut self, start: Vec2, end: Vec2, atom_to_write: Atom2d) {
         // TODO: I'm not sure when the best time to transform from Vec2 to (usize, usize) is. I think this fn shouldn't be aware of the editor either. The pub interface to the grid can convert Vec2 to (usize, usize) and inspect the editor before getting here.
-        let start = transform_2d(&start, &self.transform.inverse());
-        let end = transform_2d(end, &self.transform.inverse());
+        let start = transform_2d(start, self.transform.inverse());
+        let end = transform_2d(end, self.transform.inverse());
 
         let start = (
             start.x.clamp(0.0, GRID_SIZE as f32 - 1.0) as usize,
@@ -197,7 +197,7 @@ impl Grid2d {
 
     fn render_2d(&self, gpu: &mut Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH, None);
-        gpu.set_camera(&Mat4::IDENTITY);
+        gpu.set_camera(Mat4::IDENTITY);
 
         let verts = vec![
             Vec3::new(0.0, 0.0, 0.0),

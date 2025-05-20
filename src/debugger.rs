@@ -46,7 +46,7 @@ impl Debugger {
         events.retain(|event| {
             match event {
                 Event::LeftClickPressed(pos) => {
-                    let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                    let mouse_egui = transform_2d(*pos, self.matrix.inverse());
                     let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
                     self.input.events.push(egui::Event::PointerButton {
                         pos: mouse_egui,
@@ -58,7 +58,7 @@ impl Debugger {
                     !self.ctx.wants_pointer_input()
                 }
                 Event::LeftClickReleased(pos) => {
-                    let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                    let mouse_egui = transform_2d(*pos, self.matrix.inverse());
                     let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
                     self.input.events.push(egui::Event::PointerButton {
                         pos: mouse_egui,
@@ -70,7 +70,7 @@ impl Debugger {
                     !self.ctx.wants_pointer_input()
                 }
                 Event::MousePos(pos) => {
-                    let mouse_egui = transform_2d(pos, &self.matrix.inverse());
+                    let mouse_egui = transform_2d(*pos, self.matrix.inverse());
                     let mouse_egui = egui::Pos2::new(mouse_egui.x, mouse_egui.y);
                     self.input
                         .events
@@ -149,7 +149,7 @@ impl Debugger {
     }
 
     pub fn render(&mut self, gpu: &mut Gpu) {
-        gpu.set_camera(&Mat4::IDENTITY);
+        gpu.set_camera(Mat4::IDENTITY);
         gpu.set_render_features(RenderFeatures::RENDER_BACKFACES, None);
 
         if !self.full_output.textures_delta.set.is_empty() {
