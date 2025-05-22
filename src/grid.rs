@@ -4,6 +4,7 @@ use dot_vox;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::ops::{Add, Mul};
 
 const SIZE: usize = 16;
 
@@ -108,7 +109,7 @@ fn atom_color(atom: &Atom) -> Vec4 {
     match atom.variant {
         Solid => Vec4::new(0.5, 0.5, 0.5, 1.0),
         Gas => Vec4::new(1.0, 0.0, 1.0, 1.0),
-        GasSource => Vec4::splat(1.0),
+        GasSource => Vec4::ONE,
     }
 }
 
@@ -203,6 +204,49 @@ impl Grid {
         }
     }
 
+    fn trilerp<T, F>(&self, pos: Vec3, field: F) -> T
+    where
+        F: Fn(&Atom) -> T, // Return the field of the atom to interpolate
+        T: Mul<f32, Output = T>,
+        T: Add<T, Output = T>,
+    {
+        // Get integer base point
+        let p0 = pos.floor().as_usizevec3();
+
+        // Neighboring point (ceiling)
+        let p1 = p0 + UVec3::ONE;
+
+        // Fractional parts
+        let dx = pos.x - p0.x as f32;
+        let dy = pos.y - p0.y as f32;
+        let dz = pos.z - p0.z as f32;
+
+        // Corner values
+        let c000 = field(&self.atoms[p0.x][p0.y][p0.z]);
+        let c100 = field(&self.atoms[p1.x][p0.y][p0.z]);
+        let c010 = field(&self.atoms[p0.x][p1.y][p0.z]);
+        let c110 = field(&self.atoms[p1.x][p1.y][p0.z]);
+        let c001 = field(&self.atoms[p0.x][p0.y][p1.z]);
+        let c101 = field(&self.atoms[p1.x][p0.y][p1.z]);
+        let c011 = field(&self.atoms[p0.x][p1.y][p1.z]);
+        let c111 = field(&self.atoms[p1.x][p1.y][p1.z]);
+
+        // Interpolate along x
+        let c00 = c000 * (1.0 - dx) + c100 * dx;
+        let c10 = c010 * (1.0 - dx) + c110 * dx;
+        let c01 = c001 * (1.0 - dx) + c101 * dx;
+        let c11 = c011 * (1.0 - dx) + c111 * dx;
+
+        // Interpolate along y
+        let c0 = c00 * (1.0 - dy) + c10 * dy;
+        let c1 = c01 * (1.0 - dy) + c11 * dy;
+
+        // Interpolate along z
+        let c = c0 * (1.0 - dz) + c1 * dz;
+
+        c
+    }
+
     fn step(&mut self, spread_interval: u64) {
         self.apply_edge_vacuum();
 
@@ -214,9 +258,12 @@ impl Grid {
         };
         self.atoms[hs + 1][hs + 1][hs + 1] = Atom {
             pres: 0.5,
-            vel: Vec3::splat(1.0).normalize(),
+            vel: Vec3::ONE.normalize(),
             variant: Gas,
         };
+
+        let trilerped_vel = self.trilerp(Vec3::splat(1.0), |atom| atom.vel);
+        let trilerped_pres = self.trilerp(Vec3::splat(1.0), |atom| atom.pres);
 
         self.step_counter = self.step_counter.wrapping_add(1);
     }
@@ -494,7 +541,7 @@ impl Viewer {
             Vec3::new(0.0, 3.0, 0.0),
         ];
         let front_intensity = Vec3::splat(0.7).extend(1.0);
-        let top_intensity = Vec4::splat(1.0);
+        let top_intensity = Vec4::ONE;
         let intensities = [
             // front
             front_intensity,
