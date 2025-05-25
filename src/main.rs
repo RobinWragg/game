@@ -9,7 +9,7 @@ mod math;
 mod prelude;
 
 use game::Game;
-use gpu::Gpu;
+use gpu::ImplGpu;
 use prelude::*;
 use std::sync::Arc;
 use winit::{
@@ -26,7 +26,7 @@ const WINDOW_HEIGHT: u32 = 760;
 
 struct App {
     window: Option<Arc<Window>>,
-    gpu: Option<Gpu>,
+    gpu: Option<ImplGpu>,
     game: Option<Game>,
     mouse_pos: Vec2,
 }
@@ -53,7 +53,7 @@ impl ApplicationHandler for App {
                 .unwrap(),
         );
 
-        self.gpu = Some(Gpu::new(&window));
+        self.gpu = Some(ImplGpu::new(&window));
         self.window = Some(window.clone());
         self.game = Some(Game::new(self.gpu.as_ref().unwrap()));
     }

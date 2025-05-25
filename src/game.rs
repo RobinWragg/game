@@ -13,7 +13,7 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new(gpu: &Gpu) -> Game {
+    pub fn new(gpu: &impl Gpu) -> Game {
         let mut grid = Grid::from_file();
         Self {
             debugger: Debugger::default(),
@@ -44,7 +44,7 @@ impl Game {
         }
     }
 
-    pub fn update_and_render(&mut self, gpu: &mut Gpu) {
+    pub fn update_and_render(&mut self, gpu: &mut impl Gpu) {
         gpu.begin_frame();
 
         let frame_start_time = Instant::now();

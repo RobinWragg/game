@@ -42,7 +42,7 @@ impl Debugger {
         self.delta_times.get_mut(name).unwrap().push_back(dt);
     }
 
-    pub fn update(&mut self, events: &mut VecDeque<Event>, dt: f32, gpu: &Gpu) {
+    pub fn update(&mut self, events: &mut VecDeque<Event>, dt: f32, gpu: &impl Gpu) {
         events.retain(|event| {
             match event {
                 Event::LeftClickPressed(pos) => {
@@ -148,7 +148,7 @@ impl Debugger {
         });
     }
 
-    pub fn render(&mut self, gpu: &mut Gpu) {
+    pub fn render(&mut self, gpu: &mut impl Gpu) {
         gpu.set_camera(Mat4::IDENTITY);
         gpu.set_render_features(RenderFeatures::RENDER_BACKFACES, None);
 

@@ -195,7 +195,7 @@ impl Grid2d {
         }
     }
 
-    fn render_2d(&self, gpu: &mut Gpu) {
+    fn render_2d(&self, gpu: &mut impl Gpu) {
         gpu.set_render_features(RenderFeatures::DEPTH, None);
         gpu.set_camera(Mat4::IDENTITY);
 
