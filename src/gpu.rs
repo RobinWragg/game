@@ -214,14 +214,14 @@ impl Gpu for ImplGpu {
             "expected entire 8bit RGBA pixel data"
         );
         self.queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &texture.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             pixel_bytes,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(texture.size.width * 4),
                 rows_per_image: Some(texture.size.height),
@@ -306,6 +306,7 @@ impl Gpu for ImplGpu {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture_view,
@@ -388,7 +389,7 @@ impl Gpu for ImplGpu {
 impl ImplGpu {
     pub fn new(window: &Arc<Window>) -> Self {
         let (surface, adapter) = {
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
                 ..Default::default()
             });
@@ -430,8 +431,8 @@ impl ImplGpu {
                 required_limits: limits,
                 label: None,
                 memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::Off,
             },
-            None,
         ))
         .unwrap();
 
@@ -608,18 +609,19 @@ impl ImplGpu {
         };
 
         let mut compilation_options: wgpu::PipelineCompilationOptions = Default::default();
-        let mut constants_hash = HashMap::new();
+        let mut constants_hash: std::collections::HashMap<String, f64> = HashMap::new();
         if features.contains(RenderFeatures::LIGHT) {
             constants_hash.insert("LIGHTING_ENABLED".to_string(), 1.0);
         }
-        compilation_options.constants = &constants_hash;
+        let constants_vec: Vec<_> = constants_hash.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+        compilation_options.constants = &constants_vec;
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[
                     vertpos_layout,
                     vertnormal_layout,
@@ -630,7 +632,7 @@ impl ImplGpu {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING), // TODO: not premultiplied
