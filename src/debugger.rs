@@ -159,15 +159,14 @@ impl Debugger {
             assert_eq!(delta.options.minification, TextureFilter::Linear);
             assert_eq!(delta.options.wrap_mode, TextureWrapMode::ClampToEdge);
             assert_eq!(delta.pos, None);
-            let font_image = match &delta.image {
-                ImageData::Color(_) => panic!(),
-                ImageData::Font(f) => f,
+            let image = match &delta.image {
+                ImageData::Color(color_image) => color_image,
             };
 
-            let gpu_tex_id = gpu.create_texture(font_image.size[0], font_image.size[1], true);
-            let srgba_pixels = font_image.srgba_pixels(None);
-            let mut pixel_bytes = Vec::with_capacity(srgba_pixels.len() * 4);
-            for pixel in srgba_pixels {
+            let gpu_tex_id = gpu.create_texture(image.size[0], image.size[1], true);
+            let pixels = image.pixels.as_slice();
+            let mut pixel_bytes = Vec::with_capacity(pixels.len() * 4);
+            for pixel in pixels {
                 pixel_bytes.push(pixel.r());
                 pixel_bytes.push(pixel.g());
                 pixel_bytes.push(pixel.b());
