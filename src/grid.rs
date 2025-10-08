@@ -250,20 +250,84 @@ impl Grid {
     fn step(&mut self, spread_interval: u64) {
         self.apply_edge_vacuum();
 
-        let hs = SIZE / 2;
-        self.atoms[hs][hs][hs] = Atom {
-            pres: 1.0,
-            vel: Vec3::ZERO,
-            variant: Gas,
-        };
-        self.atoms[hs + 1][hs + 1][hs + 1] = Atom {
-            pres: 0.5,
-            vel: Vec3::ONE.normalize(),
-            variant: Gas,
-        };
+        // Create dst grid as a clone of src (self.atoms)
+        let mut dst = self.atoms.clone();
 
-        let trilerped_vel = self.trilerp(Vec3::splat(1.0), |atom| atom.vel);
-        let trilerped_pres = self.trilerp(Vec3::splat(1.0), |atom| atom.pres);
+        // First pass: advection with trilerp
+        for pos in self.positions().collect::<Vec<_>>() {
+            let atom = self.at(pos);
+            let vel = atom.vel;
+
+            // Check velocity magnitude
+            let vel_magnitude = vel.length();
+            if vel_magnitude > 1.23 {
+                panic!("Velocity magnitude {} exceeds 1.23 at position {:?}", vel_magnitude, pos);
+            }
+
+            // Calculate sample position: current_atom_pos - velocity + 0.5
+            let sample_pos = pos.as_vec3() - vel + Vec3::splat(0.5);
+
+            // Get trilerped values
+            let trilerped_vel = self.trilerp(sample_pos, |atom| atom.vel);
+            let trilerped_pres = self.trilerp(sample_pos, |atom| atom.pres);
+
+            // Write to dst grid
+            dst[pos.x][pos.y][pos.z].vel = trilerped_vel;
+            dst[pos.x][pos.y][pos.z].pres = trilerped_pres;
+        }
+
+        // Swap src and dst
+        self.atoms = dst;
+        dst = self.atoms.clone();
+
+        // Second pass: velocity averaging with 6 neighbors
+        for pos in self.positions().collect::<Vec<_>>() {
+            let x = pos.x;
+            let y = pos.y;
+            let z = pos.z;
+
+            let mut sum_vel = Vec3::ZERO;
+            let mut count = 0;
+
+            // Check each of the 6 neighbors
+            if x > 0 {
+                sum_vel += self.atoms[x - 1][y][z].vel;
+                count += 1;
+            }
+            if x < SIZE - 1 {
+                sum_vel += self.atoms[x + 1][y][z].vel;
+                count += 1;
+            }
+            if y > 0 {
+                sum_vel += self.atoms[x][y - 1][z].vel;
+                count += 1;
+            }
+            if y < SIZE - 1 {
+                sum_vel += self.atoms[x][y + 1][z].vel;
+                count += 1;
+            }
+            if z > 0 {
+                sum_vel += self.atoms[x][y][z - 1].vel;
+                count += 1;
+            }
+            if z < SIZE - 1 {
+                sum_vel += self.atoms[x][y][z + 1].vel;
+                count += 1;
+            }
+
+            // Average the velocities
+            let avg_vel = if count > 0 {
+                sum_vel / count as f32
+            } else {
+                Vec3::ZERO
+            };
+
+            // Write to dst grid
+            dst[x][y][z].vel = avg_vel;
+        }
+
+        // Final grid is dst
+        self.atoms = dst;
 
         self.step_counter = self.step_counter.wrapping_add(1);
     }
