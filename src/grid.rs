@@ -250,6 +250,19 @@ impl Grid {
     fn step(&mut self, spread_interval: u64) {
         self.apply_edge_vacuum();
 
+        // Set gas source atoms
+        let hs = SIZE / 2;
+        self.atoms[hs][hs][hs] = Atom {
+            pres: 1.0,
+            vel: Vec3::ZERO,
+            variant: Gas,
+        };
+        self.atoms[hs + 1][hs + 1][hs + 1] = Atom {
+            pres: 0.5,
+            vel: Vec3::ONE.normalize(),
+            variant: Gas,
+        };
+
         // Create dst grid as a clone of src (self.atoms)
         let mut dst = self.atoms.clone();
 
