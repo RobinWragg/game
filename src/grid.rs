@@ -265,7 +265,11 @@ impl Grid {
             }
 
             // Calculate sample position: current_atom_pos - velocity + 0.5
-            let sample_pos = pos.as_vec3() - vel + Vec3::splat(0.5);
+            let sample_pos_unclamped = pos.as_vec3() - vel + Vec3::splat(0.5);
+            
+            // Clamp to ensure trilerp won't access out of bounds (p1 needs to be < SIZE)
+            let max_coord = (SIZE - 2) as f32;
+            let sample_pos = sample_pos_unclamped.clamp(Vec3::ZERO, Vec3::splat(max_coord));
 
             // Get trilerped values
             let trilerped_vel = self.trilerp(sample_pos, |atom| atom.vel);
@@ -654,5 +658,38 @@ impl Viewer {
             gpu.render_mesh(&self.mesh, &t);
             gpu.release_uniform(t);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "Velocity magnitude")]
+    fn test_step_velocity_magnitude_panic() {
+        let mut grid = Grid::new();
+        grid.load();
+        
+        // Set a high velocity that exceeds 1.23
+        grid.atoms[5][5][5].vel = Vec3::new(2.0, 0.0, 0.0); // magnitude = 2.0 > 1.23
+        
+        grid.step(0); // Should panic
+    }
+
+    #[test]
+    fn test_step_normal_operation() {
+        let mut grid = Grid::new();
+        grid.load();
+        
+        // Set some reasonable velocities and pressures
+        grid.atoms[5][5][5].vel = Vec3::new(0.1, 0.1, 0.1); // magnitude ~0.17 < 1.23
+        grid.atoms[5][5][5].pres = 1.0;
+        
+        // Should not panic
+        grid.step(0);
+        
+        // Verify that the grid still has atoms
+        assert_eq!(grid.atoms.len(), SIZE);
     }
 }
