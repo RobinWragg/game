@@ -247,6 +247,63 @@ impl Grid {
         c
     }
 
+    fn calculate_average_velocity(&self, pos: UVec3) -> Vec3 {
+        let x = pos.x;
+        let y = pos.y;
+        let z = pos.z;
+
+        let mut weighted_sum = Vec3::ZERO;
+        let mut total_weight = 0.0;
+
+        // Central atom (weight = 1.0)
+        weighted_sum += self.atoms[x][y][z].vel * 1.0;
+        total_weight += 1.0;
+
+        // Iterate through all 26 neighbors
+        for dx in -1i32..=1i32 {
+            for dy in -1i32..=1i32 {
+                for dz in -1i32..=1i32 {
+                    // Skip the central atom (0,0,0)
+                    if dx == 0 && dy == 0 && dz == 0 {
+                        continue;
+                    }
+
+                    let nx = x as i32 + dx;
+                    let ny = y as i32 + dy;
+                    let nz = z as i32 + dz;
+
+                    // Check bounds
+                    if nx < 0
+                        || nx >= SIZE as i32
+                        || ny < 0
+                        || ny >= SIZE as i32
+                        || nz < 0
+                        || nz >= SIZE as i32
+                    {
+                        continue;
+                    }
+
+                    let neighbor_vel = self.atoms[nx as usize][ny as usize][nz as usize].vel;
+
+                    // Calculate weight based on distance
+                    let num_nonzero = (dx.abs() + dy.abs() + dz.abs()) as usize;
+                    let weight = match num_nonzero {
+                        1 => 1.0,                  // Face neighbors (axis-aligned)
+                        2 => 1.0 / 2.0_f32.sqrt(), // Edge neighbors (1/sqrt(2))
+                        3 => 1.0 / 3.0_f32.sqrt(), // Corner neighbors (1/sqrt(3))
+                        _ => unreachable!(),
+                    };
+
+                    weighted_sum += neighbor_vel * weight;
+                    total_weight += weight;
+                }
+            }
+        }
+
+        // Calculate weighted average
+        weighted_sum / total_weight
+    }
+
     fn step(&mut self, spread_interval: u64) {
         self.apply_edge_vacuum();
 
@@ -274,12 +331,15 @@ impl Grid {
             // Check velocity magnitude
             let vel_magnitude = vel.length();
             if vel_magnitude > 1.23 {
-                panic!("Velocity magnitude {} exceeds 1.23 at position {:?}", vel_magnitude, pos);
+                panic!(
+                    "Velocity magnitude {} exceeds 1.23 at position {:?}",
+                    vel_magnitude, pos
+                );
             }
 
             // Calculate sample position: current_atom_pos - velocity + 0.5
             let sample_pos_unclamped = pos.as_vec3() - vel + Vec3::splat(0.5);
-            
+
             // Clamp to ensure trilerp won't access out of bounds (p1 needs to be < SIZE)
             let max_coord = (SIZE - 2) as f32;
             let sample_pos = sample_pos_unclamped.clamp(Vec3::ZERO, Vec3::splat(max_coord));
@@ -297,50 +357,10 @@ impl Grid {
         self.atoms = dst;
         dst = self.atoms.clone();
 
-        // Second pass: velocity averaging with 6 neighbors
+        // Second pass: weighted velocity averaging with central atom and 26 neighbors
         for pos in self.positions().collect::<Vec<_>>() {
-            let x = pos.x;
-            let y = pos.y;
-            let z = pos.z;
-
-            let mut sum_vel = Vec3::ZERO;
-            let mut count = 0;
-
-            // Check each of the 6 neighbors
-            if x > 0 {
-                sum_vel += self.atoms[x - 1][y][z].vel;
-                count += 1;
-            }
-            if x < SIZE - 1 {
-                sum_vel += self.atoms[x + 1][y][z].vel;
-                count += 1;
-            }
-            if y > 0 {
-                sum_vel += self.atoms[x][y - 1][z].vel;
-                count += 1;
-            }
-            if y < SIZE - 1 {
-                sum_vel += self.atoms[x][y + 1][z].vel;
-                count += 1;
-            }
-            if z > 0 {
-                sum_vel += self.atoms[x][y][z - 1].vel;
-                count += 1;
-            }
-            if z < SIZE - 1 {
-                sum_vel += self.atoms[x][y][z + 1].vel;
-                count += 1;
-            }
-
-            // Average the velocities
-            let avg_vel = if count > 0 {
-                sum_vel / count as f32
-            } else {
-                Vec3::ZERO
-            };
-
-            // Write to dst grid
-            dst[x][y][z].vel = avg_vel;
+            let avg_vel = self.calculate_average_velocity(pos);
+            dst[pos.x][pos.y][pos.z].vel = avg_vel;
         }
 
         // Final grid is dst
@@ -683,10 +703,10 @@ mod tests {
     fn test_step_velocity_magnitude_panic() {
         let mut grid = Grid::new();
         grid.load();
-        
+
         // Set a high velocity that exceeds 1.23
         grid.atoms[5][5][5].vel = Vec3::new(2.0, 0.0, 0.0); // magnitude = 2.0 > 1.23
-        
+
         grid.step(0); // Should panic
     }
 
@@ -694,14 +714,14 @@ mod tests {
     fn test_step_normal_operation() {
         let mut grid = Grid::new();
         grid.load();
-        
+
         // Set some reasonable velocities and pressures
         grid.atoms[5][5][5].vel = Vec3::new(0.1, 0.1, 0.1); // magnitude ~0.17 < 1.23
         grid.atoms[5][5][5].pres = 1.0;
-        
+
         // Should not panic
         grid.step(0);
-        
+
         // Verify that the grid still has atoms
         assert_eq!(grid.atoms.len(), SIZE);
     }
