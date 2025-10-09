@@ -247,7 +247,45 @@ impl Grid {
         c
     }
 
-    fn calculate_average_velocity(&self, pos: UVec3) -> Vec3 {
+    fn calculate_6_average_velocity(&self, pos: UVec3) -> Vec3 {
+        let x = pos.x;
+        let y = pos.y;
+        let z = pos.z;
+
+        let mut sum_vel = Vec3::ZERO;
+        let mut count = 0;
+
+        // Check each of the 6 neighbors
+        if x > 0 {
+            sum_vel += self.atoms[x - 1][y][z].vel;
+            count += 1;
+        }
+        if x < SIZE - 1 {
+            sum_vel += self.atoms[x + 1][y][z].vel;
+            count += 1;
+        }
+        if y > 0 {
+            sum_vel += self.atoms[x][y - 1][z].vel;
+            count += 1;
+        }
+        if y < SIZE - 1 {
+            sum_vel += self.atoms[x][y + 1][z].vel;
+            count += 1;
+        }
+        if z > 0 {
+            sum_vel += self.atoms[x][y][z - 1].vel;
+            count += 1;
+        }
+        if z < SIZE - 1 {
+            sum_vel += self.atoms[x][y][z + 1].vel;
+            count += 1;
+        }
+
+        // Average the velocities
+        sum_vel / count as f32
+    }
+
+    fn calculate_9_average_velocity(&self, pos: UVec3) -> Vec3 {
         let x = pos.x;
         let y = pos.y;
         let z = pos.z;
@@ -359,8 +397,8 @@ impl Grid {
 
         // Second pass: weighted velocity averaging with central atom and 26 neighbors
         for pos in self.positions().collect::<Vec<_>>() {
-            let avg_vel = self.calculate_average_velocity(pos);
-            dst[pos.x][pos.y][pos.z].vel = avg_vel;
+            // dst[pos.x][pos.y][pos.z].vel = self.calculate_6_average_velocity(pos);
+            dst[pos.x][pos.y][pos.z].vel = self.calculate_9_average_velocity(pos);
         }
 
         // Final grid is dst
