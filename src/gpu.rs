@@ -216,25 +216,12 @@ impl Gpu for ImplGpu {
 
     fn write_rgba_texture(&self, texture_id: usize, pixel_bytes: &[u8]) {
         let texture = &self.textures[texture_id];
-        debug_assert_eq!(
-            pixel_bytes.len(),
-            (texture.size.width * texture.size.height * 4) as usize,
-            "expected entire 8bit RGBA pixel data"
-        );
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
+        self.write_rgba_texture_region(
+            texture_id,
+            [0, 0],
             pixel_bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(texture.size.width * 4),
-                rows_per_image: Some(texture.size.height),
-            },
-            texture.size,
+            texture.size.width as usize,
+            texture.size.height as usize,
         );
     }
 
@@ -248,9 +235,19 @@ impl Gpu for ImplGpu {
     ) {
         let texture = &self.textures[texture_id];
         let [x, y] = offset;
-        debug_assert_eq!(pixel_bytes.len(), width * height * 4, "expected RGBA sub-region bytes");
-        debug_assert!(x + width <= texture.size.width as usize, "partial write x overflow");
-        debug_assert!(y + height <= texture.size.height as usize, "partial write y overflow");
+        debug_assert_eq!(
+            pixel_bytes.len(),
+            width * height * 4,
+            "expected RGBA sub-region bytes"
+        );
+        debug_assert!(
+            x + width <= texture.size.width as usize,
+            "partial write x overflow"
+        );
+        debug_assert!(
+            y + height <= texture.size.height as usize,
+            "partial write y overflow"
+        );
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -472,15 +469,13 @@ impl ImplGpu {
             limits.max_texture_dimension_2d
         );
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                required_limits: limits,
-                label: None,
-                memory_hints: wgpu::MemoryHints::Performance,
-                trace: wgpu::Trace::Off,
-            },
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            required_features: wgpu::Features::empty(),
+            required_limits: limits,
+            label: None,
+            memory_hints: wgpu::MemoryHints::Performance,
+            trace: wgpu::Trace::Off,
+        }))
         .unwrap();
 
         let size = window.inner_size(); // Size in physical pixels
@@ -660,7 +655,10 @@ impl ImplGpu {
         if features.contains(RenderFeatures::LIGHT) {
             constants_hash.insert("LIGHTING_ENABLED".to_string(), 1.0);
         }
-        let constants_vec: Vec<_> = constants_hash.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+        let constants_vec: Vec<_> = constants_hash
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .collect();
         compilation_options.constants = &constants_vec;
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
