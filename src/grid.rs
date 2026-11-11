@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::ops::{Add, Mul};
 
-const SIZE: usize = 16;
+const SIZE: usize = 32;
 
 pub mod grid2d;
 
