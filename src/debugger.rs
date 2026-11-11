@@ -152,18 +152,15 @@ impl Debugger {
         gpu.set_camera(Mat4::IDENTITY);
         gpu.set_render_features(RenderFeatures::RENDER_BACKFACES, None);
 
-        if !self.full_output.textures_delta.set.is_empty() {
-            assert_eq!(self.full_output.textures_delta.set.len(), 1);
-            let (egui_tex_id, delta) = &self.full_output.textures_delta.set[0];
+        for (egui_tex_id, delta) in std::mem::take(&mut self.full_output.textures_delta.set) {
             assert_eq!(delta.options.magnification, TextureFilter::Linear);
             assert_eq!(delta.options.minification, TextureFilter::Linear);
             assert_eq!(delta.options.wrap_mode, TextureWrapMode::ClampToEdge);
-            assert_eq!(delta.pos, None);
+
             let image = match &delta.image {
                 ImageData::Color(color_image) => color_image,
             };
 
-            let gpu_tex_id = gpu.create_texture(image.size[0], image.size[1], true);
             let pixels = image.pixels.as_slice();
             let mut pixel_bytes = Vec::with_capacity(pixels.len() * 4);
             for pixel in pixels {
@@ -172,15 +169,26 @@ impl Debugger {
                 pixel_bytes.push(pixel.b());
                 pixel_bytes.push(pixel.a());
             }
-            gpu.write_rgba_texture(gpu_tex_id, &pixel_bytes);
 
             let egui_tex_id = match egui_tex_id {
-                egui::TextureId::Managed(id) => *id,
+                egui::TextureId::Managed(id) => id,
                 _ => panic!(),
             };
-            assert!(egui_tex_id == 0);
 
-            self.egui_to_gpu_tex_id.insert(egui_tex_id, gpu_tex_id);
+            let gpu_tex_id = match self.egui_to_gpu_tex_id.get(&egui_tex_id) {
+                Some(id) => *id,
+                None => {
+                    let new_gpu_tex_id = gpu.create_texture(image.size[0], image.size[1], true);
+                    self.egui_to_gpu_tex_id.insert(egui_tex_id, new_gpu_tex_id);
+                    new_gpu_tex_id
+                }
+            };
+
+            if let Some(pos) = delta.pos {
+                gpu.write_rgba_texture_region(gpu_tex_id, pos, &pixel_bytes, image.size[0], image.size[1]);
+            } else {
+                gpu.write_rgba_texture(gpu_tex_id, &pixel_bytes);
+            }
         }
         assert!(self.full_output.textures_delta.free.is_empty());
 

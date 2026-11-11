@@ -9,6 +9,14 @@ pub trait Gpu {
     ) -> Mesh;
     fn create_texture(&mut self, width: usize, height: usize, linear_filtering: bool) -> usize;
     fn write_rgba_texture(&self, texture_id: usize, pixel_bytes: &[u8]);
+    fn write_rgba_texture_region(
+        &self,
+        texture_id: usize,
+        offset: [usize; 2],
+        pixel_bytes: &[u8],
+        width: usize,
+        height: usize,
+    );
     fn create_uniform<T: bytemuck::NoUninit>(&mut self, payload: &T) -> Uniform;
     fn release_uniform(&mut self, uniform: Uniform);
     fn window_to_normalized_transform(&self) -> Mat4;
@@ -227,6 +235,45 @@ impl Gpu for ImplGpu {
                 rows_per_image: Some(texture.size.height),
             },
             texture.size,
+        );
+    }
+
+    fn write_rgba_texture_region(
+        &self,
+        texture_id: usize,
+        offset: [usize; 2],
+        pixel_bytes: &[u8],
+        width: usize,
+        height: usize,
+    ) {
+        let texture = &self.textures[texture_id];
+        let [x, y] = offset;
+        debug_assert_eq!(pixel_bytes.len(), width * height * 4, "expected RGBA sub-region bytes");
+        debug_assert!(x + width <= texture.size.width as usize, "partial write x overflow");
+        debug_assert!(y + height <= texture.size.height as usize, "partial write y overflow");
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: x as u32,
+                    y: y as u32,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixel_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some((width * 4) as u32),
+                rows_per_image: Some(height as u32),
+            },
+            wgpu::Extent3d {
+                width: width as u32,
+                height: height as u32,
+                depth_or_array_layers: 1,
+            },
         );
     }
 
