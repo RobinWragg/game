@@ -475,7 +475,7 @@ impl ImplGpu {
             label: None,
             memory_hints: wgpu::MemoryHints::Performance,
             trace: wgpu::Trace::Off,
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            // experimental_features: wgpu::ExperimentalFeatures::disabled(),
         }))
         .unwrap();
 
