@@ -55,7 +55,7 @@ impl Debugger {
                         modifiers: egui::Modifiers::default(),
                     });
                     // Remove pointer events (return false) if the egui context wants them.
-                    !self.ctx.wants_pointer_input()
+                    !self.ctx.egui_wants_pointer_input()
                 }
                 Event::LeftClickReleased(pos) => {
                     let mouse_egui = transform_2d(*pos, self.matrix.inverse());
@@ -67,7 +67,7 @@ impl Debugger {
                         modifiers: egui::Modifiers::default(),
                     });
                     // Remove pointer events (return false) if the egui context wants them.
-                    !self.ctx.wants_pointer_input()
+                    !self.ctx.egui_wants_pointer_input()
                 }
                 Event::MousePos(pos) => {
                     let mouse_egui = transform_2d(*pos, self.matrix.inverse());
@@ -76,7 +76,7 @@ impl Debugger {
                         .events
                         .push(egui::Event::PointerMoved(mouse_egui));
                     // Remove pointer events (return false) if the egui context wants them.
-                    !self.ctx.wants_pointer_input()
+                    !self.ctx.egui_wants_pointer_input()
                 }
                 _ => true,
             }
@@ -106,10 +106,10 @@ impl Debugger {
                 ))
         };
 
-        self.full_output = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
+        self.full_output = self.ctx.run_ui(std::mem::take(&mut self.input), |ui| {
             let mut global = GLOBAL.lock().unwrap();
 
-            egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
+            egui::Panel::top("top panel").show_inside(ui, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     for key in self.delta_times.keys() {
                         let max_dt = Self::max_dt(&self.delta_times[key]);
@@ -117,7 +117,7 @@ impl Debugger {
                     }
                 });
             });
-            egui::Window::new("Editor").show(&ctx, |ui| {
+            egui::Window::new("Editor").show(ui.ctx(), |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                     ui.radio_value(
                         &mut global.selected_atom_variant,

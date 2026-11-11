@@ -33,7 +33,7 @@ pub fn i_am_text(gpu: &impl Gpu) {
     let text = std::env::args()
         .nth(1)
         .unwrap_or(" Hi, Rust! 🦀 ".to_string());
-    buffer.set_text(&text, &attrs, Shaping::Advanced);
+    buffer.set_text(&text, &attrs, Shaping::Advanced, None);
 
     // Perform shaping as desired
     buffer.shape_until_scroll(true);
