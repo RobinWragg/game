@@ -55,7 +55,7 @@ impl Debugger {
                         modifiers: egui::Modifiers::default(),
                     });
                     // Remove pointer events (return false) if the egui context wants them.
-                    !self.ctx.egui_wants_pointer_input()
+                    !self.ctx.wants_pointer_input()
                 }
                 Event::LeftClickReleased(pos) => {
                     let mouse_egui = transform_2d(*pos, self.matrix.inverse());
@@ -67,7 +67,7 @@ impl Debugger {
                         modifiers: egui::Modifiers::default(),
                     });
                     // Remove pointer events (return false) if the egui context wants them.
-                    !self.ctx.egui_wants_pointer_input()
+                    !self.ctx.wants_pointer_input()
                 }
                 Event::MousePos(pos) => {
                     let mouse_egui = transform_2d(*pos, self.matrix.inverse());
@@ -76,7 +76,7 @@ impl Debugger {
                         .events
                         .push(egui::Event::PointerMoved(mouse_egui));
                     // Remove pointer events (return false) if the egui context wants them.
-                    !self.ctx.egui_wants_pointer_input()
+                    !self.ctx.wants_pointer_input()
                 }
                 _ => true,
             }
@@ -106,10 +106,10 @@ impl Debugger {
                 ))
         };
 
-        self.full_output = self.ctx.run_ui(std::mem::take(&mut self.input), |ui| {
+        self.full_output = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
             let mut global = GLOBAL.lock().unwrap();
 
-            egui::Panel::top("top panel").show(ui, |ui| {
+            egui::TopBottomPanel::top("top panel").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     for key in self.delta_times.keys() {
                         let max_dt = Self::max_dt(&self.delta_times[key]);
@@ -117,7 +117,7 @@ impl Debugger {
                     }
                 });
             });
-            egui::Window::new("Editor").show(ui.ctx(), |ui| {
+            egui::Window::new("Editor").show(&ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                     ui.radio_value(
                         &mut global.selected_atom_variant,
@@ -152,51 +152,35 @@ impl Debugger {
         gpu.set_camera(Mat4::IDENTITY);
         gpu.set_render_features(RenderFeatures::RENDER_BACKFACES, None);
 
-        for (egui_tex_id, deltas) in std::mem::take(&mut self.full_output.textures_delta.set) {
-            for delta in deltas {
-                assert_eq!(delta.options.magnification, TextureFilter::Linear);
-                assert_eq!(delta.options.minification, TextureFilter::Linear);
-                assert_eq!(delta.options.wrap_mode, TextureWrapMode::ClampToEdge);
+        if !self.full_output.textures_delta.set.is_empty() {
+            assert_eq!(self.full_output.textures_delta.set.len(), 1);
+            let (egui_tex_id, delta) = &self.full_output.textures_delta.set[0];
+            assert_eq!(delta.options.magnification, TextureFilter::Linear);
+            assert_eq!(delta.options.minification, TextureFilter::Linear);
+            assert_eq!(delta.options.wrap_mode, TextureWrapMode::ClampToEdge);
+            assert_eq!(delta.pos, None);
+            let image = match &delta.image {
+                ImageData::Color(color_image) => color_image,
+            };
 
-                let image = match &delta.image {
-                    ImageData::Color(color_image) => color_image,
-                };
-
-                let pixels = image.pixels.as_slice();
-                let mut pixel_bytes = Vec::with_capacity(pixels.len() * 4);
-                for pixel in pixels {
-                    pixel_bytes.push(pixel.r());
-                    pixel_bytes.push(pixel.g());
-                    pixel_bytes.push(pixel.b());
-                    pixel_bytes.push(pixel.a());
-                }
-
-                let egui_tex_id = match egui_tex_id {
-                    egui::TextureId::Managed(id) => id,
-                    _ => panic!(),
-                };
-
-                let gpu_tex_id = match self.egui_to_gpu_tex_id.get(&egui_tex_id) {
-                    Some(id) => *id,
-                    None => {
-                        let new_gpu_tex_id = gpu.create_texture(image.size[0], image.size[1], true);
-                        self.egui_to_gpu_tex_id.insert(egui_tex_id, new_gpu_tex_id);
-                        new_gpu_tex_id
-                    }
-                };
-
-                if let Some(pos) = delta.pos {
-                    gpu.write_rgba_texture_region(
-                        gpu_tex_id,
-                        pos,
-                        &pixel_bytes,
-                        image.size[0],
-                        image.size[1],
-                    );
-                } else {
-                    gpu.write_rgba_texture(gpu_tex_id, &pixel_bytes);
-                }
+            let gpu_tex_id = gpu.create_texture(image.size[0], image.size[1], true);
+            let pixels = image.pixels.as_slice();
+            let mut pixel_bytes = Vec::with_capacity(pixels.len() * 4);
+            for pixel in pixels {
+                pixel_bytes.push(pixel.r());
+                pixel_bytes.push(pixel.g());
+                pixel_bytes.push(pixel.b());
+                pixel_bytes.push(pixel.a());
             }
+            gpu.write_rgba_texture(gpu_tex_id, &pixel_bytes);
+
+            let egui_tex_id = match egui_tex_id {
+                egui::TextureId::Managed(id) => *id,
+                _ => panic!(),
+            };
+            assert!(egui_tex_id == 0);
+
+            self.egui_to_gpu_tex_id.insert(egui_tex_id, gpu_tex_id);
         }
         assert!(self.full_output.textures_delta.free.is_empty());
 
